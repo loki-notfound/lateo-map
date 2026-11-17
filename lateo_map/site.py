@@ -14,6 +14,8 @@ import shutil
 import tempfile
 import time
 
+from . import db as store, release
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(HERE, "static")
 
@@ -23,10 +25,11 @@ CLUSTER_RADIUS = 13             # map units; places closer than this are drawn a
 BEHIND_BLOCKS = 10
 BLOCK_SECONDS = 120
 
-KINDS = {  # key: (label, description)
-    "p2p": ("P2P", "takes part in the network, no public RPC found"),
-    "rpc": ("RPC", "answers wallets over RPC, no P2P found"),
-    "both": ("P2P and RPC", "takes part in the network and answers wallets"),
+KINDS = {  # key: label
+    "p2p": "P2P",
+    "rpc": "RPC",
+    "both": "P2P and RPC",
+    "private": "Private",
 }
 
 HEADERS = (
@@ -85,6 +88,29 @@ def load_nodes(db, config):
     return nodes
 
 
+def load_hidden(db, now, fresh=2 * 3600):
+    """The private nodes (they run but cannot be reached from outside; see
+    own.py), as the collector last counted them: place and height, no address. None when
+    there is no count or it is old."""
+    at = store.get_meta(db, "unreachable_at")
+    raw = store.get_meta(db, "unreachable_nodes")
+    if at is None or raw is None or now - float(at) > fresh:
+        return None
+    hidden = []
+    for index, entry in enumerate(json.loads(raw), 1):
+        height = entry.get("height")
+        hidden.append({
+            "ip": None, "id": f"h-{index}", "kind": "private", "p2p_port": None, "rpc_port": None,
+            "status": "online", "height": height,
+            "release": release.from_height(height) if height else None, "pruned": False,
+            "country": entry.get("country"), "country_name": entry.get("country_name"),
+            "region": None, "city": entry.get("city"), "lat": entry.get("lat"),
+            "lon": entry.get("lon"), "asn": entry.get("asn"), "network": entry.get("network"),
+            "first_seen": None, "last_seen": int(float(at)),
+        })
+    return hidden
+
+
 def project(lat, lon):
     return (lon + 180.0) / 360.0 * WIDTH, (90.0 - lat) / 180.0 * HEIGHT
 
@@ -128,8 +154,16 @@ def cluster(nodes):
     return groups
 
 
-def row_id(ip):
-    return "n-" + re.sub(r"[^0-9a-f]", "-", ip.lower())
+def row_id(node):
+    if node.get("id"):
+        return node["id"]
+    return "n-" + re.sub(r"[^0-9a-f]", "-", node["ip"].lower())
+
+
+def title_of(node):
+    if node["kind"] == "private":
+        return f"Private node · {place_name(node)}"
+    return f"{node['ip']} · {KINDS[node['kind']]} · {place_name(node)} · {node['status']}"
 
 
 def place_name(node):
@@ -155,6 +189,7 @@ SYMBOLS = """<defs>
 <symbol id="m-p2p" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5"/></symbol>
 <symbol id="m-rpc" viewBox="0 0 16 16"><path d="M8 2L14 8L8 14L2 8Z"/></symbol>
 <symbol id="m-both" viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" rx="1.5"/></symbol>
+<symbol id="m-private" viewBox="0 0 16 16"><path d="M8 2.5L14 13H2Z"/></symbol>
 </defs>"""
 
 
@@ -163,8 +198,7 @@ def _marker(group):
     members = group["nodes"]
     first = members[0]
     if len(members) == 1:
-        label, _ = KINDS[first["kind"]]
-        title = f"{first['ip']} · {label} · {place_name(first)} · {first['status']}"
+        title = title_of(first)
         state = " is-offline" if first["status"] == "offline" else ""
         shape = (f'<use class="mk mk-{first["kind"]}{state}" href="#m-{first["kind"]}" '
                  f'x="{x - 8}" y="{y - 8}" width="16" height="16"/>')
@@ -174,14 +208,14 @@ def _marker(group):
         title = f"{len(members)} nodes · {where}"
         shape = (f'<circle class="mk-cluster" cx="{x}" cy="{y}" r="{radius(len(members)):.1f}"/>'
                  f'<text class="mk-cluster-text" x="{x}" y="{y}">{len(members)}</text>')
-    ids = " ".join(row_id(n["ip"]) for n in members)
-    return (f'<a class="lt-map-marker" href="#{row_id(first["ip"])}" data-rows="{e(ids)}" '
+    ids = " ".join(row_id(n) for n in members)
+    return (f'<a class="lt-map-marker" href="#{row_id(first)}" data-rows="{e(ids)}" '
             f'aria-label="{e(title)}"><title>{e(title)}</title>'
             f'<circle class="mk-hit" cx="{x}" cy="{y}" r="12"/>{shape}</a>')
 
 
 def _row(node):
-    label, _ = KINDS[node["kind"]]
+    label = KINDS[node["kind"]]
     ports = []
     if node["p2p_port"]:
         ports.append(f"P2P {node['p2p_port']}")
@@ -192,19 +226,27 @@ def _row(node):
     network = e(node["network"] or "")
     if node["asn"]:
         network += f' <span class="lt-muted">AS{node["asn"]}</span>'
-    release = e(node["release"] or "")
+    version = e(node["release"] or "")
     if node["pruned"]:
-        release += ' <span class="lt-muted">pruned</span>'
+        version += ' <span class="lt-muted">pruned</span>'
+    address = f'<code>{e(node["ip"])}</code>' if node["ip"] else '<span class="lt-muted">not shown</span>'
+    spot = ""
+    if node["lat"] is not None and node["lon"] is not None:
+        x, y = project(node["lat"], node["lon"])
+        spot = f' data-x="{x:.1f}" data-y="{y:.1f}"'
     return (
-        f'<tr id="{row_id(node["ip"])}" data-kind="{node["kind"]}" data-status="{node["status"]}">'
-        f'<td><code>{e(node["ip"])}</code></td>'
+        f'<tr id="{row_id(node)}"{" hidden" if node["kind"] == "private" else ""} '
+        f'data-kind="{node["kind"]}" data-status="{node["status"]}" '
+        f'data-release="{e(node["release"] or "")}" data-place="{e(place_name(node))}" '
+        f'data-title="{e(title_of(node))}"{spot}>'
+        f'<td>{address}</td>'
         f'<td><span class="kind kind-{node["kind"]}"><svg class="kind-mark" viewBox="0 0 16 16" '
         f'width="14" height="14" aria-hidden="true"><use class="mk mk-{node["kind"]}" '
         f'href="#m-{node["kind"]}"/></svg>{e(label)}</span></td>'
         f'<td>{e(", ".join(ports))}</td>'
         f'<td data-sort="{e((node["country_name"] or "~") + " " + (node["city"] or ""))}">{e(place_name(node))}</td>'
         f'<td>{network}</td>'
-        f'<td>{release}</td>'
+        f'<td>{version}</td>'
         f'<td class="lt-num">{node["height"] or ""}</td>'
         f'<td><span class="lt-status lt-status-{status[0]}">{status[1]}</span></td>'
         f'<td class="lt-num" data-sort="{node["last_seen"] or 0}">{e(stamp(node["last_seen"]))}</td>'
@@ -213,39 +255,71 @@ def _row(node):
 
 
 def counts(nodes):
-    live = [n for n in nodes if n["status"] != "offline"]
+    reachable = [n for n in nodes if n["kind"] != "private"]
+    live = [n for n in reachable if n["status"] != "offline"]
     return {
-        "nodes": len(nodes),
+        "nodes": len(reachable),
         "answering": len(live),
         "p2p": sum(n["kind"] == "p2p" for n in nodes),
         "rpc": sum(n["kind"] == "rpc" for n in nodes),
         "both": sum(n["kind"] == "both" for n in nodes),
-        "countries": len({n["country"] for n in nodes if n["country"]}),
+        "countries": len({n["country"] for n in reachable if n["country"]}),
     }
 
 
-def render(nodes, now):
+HIDDEN_NOTE = """<li><strong>Public and private nodes.</strong> A public node accepts
+      connections from the network; those are the nodes this map finds. A private
+      node, behind a firewall or a home router, connects out but accepts no
+      connections, so it is in nobody's peer list. The private nodes this page
+      knows are peers connected to nodes the operator of this map runs; switch
+      them on in the legend to see them. Of a private node the place, the network
+      and the height are kept; its address is not stored or shown. There are more
+      than these: the operator's nodes see only a part of the network.</li>
+      """
+
+
+def _mark(kind, extra=""):
+    return (f'<svg class="kind-mark" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">'
+            f'<use class="mk mk-{kind}{extra}" href="#m-{kind}"/></svg>')
+
+
+def render(nodes, now, hidden=None):
+    """`nodes` are the public nodes; `hidden` the private ones (not reachable
+    from outside), or None when they are not counted."""
     c = counts(nodes)
+    everything = nodes + (hidden or [])
+    kinds = [k for k in KINDS if k != "private" or hidden is not None]
     paths = _map_paths()
+    # the private nodes are off until a visitor switches them on
     groups = cluster(nodes)
     # big groups first, so that single markers are drawn on top and stay clickable
     groups.sort(key=lambda g: -len(g["nodes"]))
     markers = "\n".join(_marker(g) for g in groups)
-    rows = "\n".join(_row(n) for n in nodes)
+    rows = "\n".join(_row(n) for n in everything)
     tiles = "".join(
         f'<div class="lt-stat-tile"><span class="lt-stat-label">{label}</span>'
         f'<span class="lt-stat-value">{value}</span></div>'
-        for label, value in (("Nodes on the map", c["nodes"]), ("P2P only", c["p2p"]),
+        for label, value in (("Public nodes", c["nodes"]), ("P2P only", c["p2p"]),
                              ("RPC only", c["rpc"]), ("P2P and RPC", c["both"]),
-                             ("Countries", c["countries"])))
+                             ("Countries", c["countries"]))
+        + ((("Private nodes", len(hidden)),) if hidden is not None else ()))
+    # the script turns these into switches for what the map shows
     legend = "".join(
-        f'<li><span class="lt-map-legend-item"><svg class="kind-mark" viewBox="0 0 16 16" width="14" '
-        f'height="14" aria-hidden="true"><use class="mk mk-{k}" href="#m-{k}"/></svg>{e(label)}</span></li>'
-        for k, (label, _) in KINDS.items())
+        f'<li data-filter="kind" data-value="{k}"><span class="lt-map-legend-item">'
+        f'{_mark(k)}{e(KINDS[k])}</span></li>' for k in kinds)
     filters = "".join(
-        f'<button type="button" class="filter" data-filter="{k}" aria-pressed="false">{e(label)}</button>'
-        for k, (label, _) in KINDS.items())
+        f'<button type="button" class="filter" data-filter="kind" data-value="{k}" '
+        f'aria-pressed="{"false" if k == "private" else "true"}">{_mark(k)}{e(KINDS[k])}</button>'
+        for k in kinds)
+    versions = sorted({n["release"] for n in everything if n["release"]}, reverse=True)
+    version_filters = "".join(
+        f'<button type="button" class="filter" data-filter="release" data-value="{e(v)}" '
+        f'aria-pressed="true">{e(v)}</button>' for v in versions)
+    caption = f'{c["nodes"]} public nodes, {c["answering"]} answering now'
+    if hidden is not None:
+        caption += f'; {len(hidden)} private nodes (switched off at first)'
     generated = stamp(now)
+    hidden_note = HIDDEN_NOTE if hidden is not None else ""
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -281,8 +355,8 @@ def render(nodes, now):
 
 <main id="main" class="wrap-main" tabindex="-1">
   <h1>Zephyr nodes on the public network</h1>
-  <p class="lead">Every Zephyr node this site could find and reach, checked once
-  per hour. Last update {e(generated)}.</p>
+  <p class="lead">Every public Zephyr node this site could find and reach, checked
+  once per hour. Last update {e(generated)}.</p>
 
   <div class="lt-stat-grid">{tiles}</div>
 
@@ -290,21 +364,28 @@ def render(nodes, now):
     <h2 id="map-title">Map</h2>
     <div class="lt-map-frame">
       <svg class="lt-map-canvas" viewBox="{VIEW}" role="group" aria-labelledby="map-svg-title">
-        <title id="map-svg-title">World map with {c["nodes"]} Zephyr nodes in {c["countries"]} countries</title>
+        <title id="map-svg-title">World map with {len(everything)} Zephyr nodes</title>
         {SYMBOLS}
         <rect class="lt-map-water" width="{WIDTH}" height="{HEIGHT}"/>
         <path class="lt-map-graticule" d="{paths["graticule"]}"/>
         <path class="lt-map-land" fill-rule="evenodd" d="{paths["land"]}"/>
         <path class="lt-map-borders" d="{paths["borders"]}"/>
+        <g id="markers">
 {markers}
+        </g>
       </svg>
+      <div class="zoom" hidden>
+        <button type="button" data-zoom="in" aria-label="Zoom in" title="Zoom in">+</button>
+        <button type="button" data-zoom="out" aria-label="Zoom out" title="Zoom out">&minus;</button>
+        <button type="button" data-zoom="reset" aria-label="Show the whole world" title="Whole world">&#x21ba;</button>
+      </div>
       <div class="lt-map-toolbar">
-        <ul class="lt-map-legend" aria-label="Legend">
+        <ul class="lt-map-legend" id="legend" aria-label="Legend">
           {legend}
-          <li><span class="lt-map-legend-item"><svg class="kind-mark" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><use class="mk mk-p2p is-offline" href="#m-p2p"/></svg>Hollow: not answering now</span></li>
+          <li><span class="lt-map-legend-item">{_mark("p2p", " is-offline")}Hollow: not answering now</span></li>
           <li><span class="lt-map-legend-item"><span class="cluster-swatch" aria-hidden="true">3</span>Several nodes close together</span></li>
         </ul>
-        <span class="lt-muted lt-compact">A point is where the address block is registered, city level at best.</span>
+        <span class="lt-muted lt-compact">A point is where the address block is registered, city level at best.<span id="legend-hint" hidden> Click a kind to switch it on or off. Zoom with the buttons, a double click, or Ctrl and the wheel.</span></span>
       </div>
     </div>
     <p id="tip" class="tip" role="status" hidden></p>
@@ -313,14 +394,15 @@ def render(nodes, now):
   <section id="nodes" aria-labelledby="nodes-title">
     <h2 id="nodes-title">Nodes</h2>
     <div class="controls" hidden>
-      <div class="filters" role="group" aria-label="Show only">{filters}</div>
+      <div class="filters" role="group" aria-label="Kinds shown">{filters}</div>
+      <div class="filters" role="group" aria-label="Versions shown">{version_filters}</div>
       <label class="search">Search <input type="search" id="q" autocomplete="off" spellcheck="false" placeholder="address, place or network"></label>
-      <button type="button" id="reset" hidden>Show all</button>
+      <button type="button" id="reset" hidden>Back to the start</button>
       <span id="shown" class="lt-muted" role="status"></span>
     </div>
     <div class="lt-table-scroll" tabindex="0" role="region" aria-labelledby="nodes-caption">
       <table class="lt-table" id="node-table">
-        <caption id="nodes-caption">{c["nodes"]} nodes, {c["answering"]} answering now</caption>
+        <caption id="nodes-caption">{e(caption)}</caption>
         <thead>
           <tr>
             <th scope="col">Address</th>
@@ -328,7 +410,7 @@ def render(nodes, now):
             <th scope="col">Ports</th>
             <th scope="col">Place</th>
             <th scope="col">Network</th>
-            <th scope="col">Release</th>
+            <th scope="col">Version</th>
             <th scope="col" class="lt-num">Height</th>
             <th scope="col">Status</th>
             <th scope="col" class="lt-num">Last answer</th>
@@ -354,11 +436,12 @@ def render(nodes, now):
       it announces or else 17767, 443 and 80. An address that does not answer is
       tried again after a day, then less and less often.</li>
       <li><strong>What is shown.</strong> The address and ports, the kind of node,
-      its height, and the release line its answers point to, which is an estimate.
+      its height, and the version its answers point to, which is an indication.
       A node that stays silent for 48 hours leaves the map.</li>
-      <li><strong>What is not asked or shown.</strong> No administrative calls, no
-      exact build, and nothing about how a node's RPC is configured. No host names.</li>
-      <li><strong>Place and network.</strong> From
+      <li><strong>What is not asked or shown.</strong> No administrative calls to
+      anyone's node but the operator's own, no exact build, and nothing about how
+      a node's RPC is configured. No host names.</li>
+{hidden_note}      <li><strong>Place and network.</strong> From
       <a href="https://db-ip.com">IP Geolocation by DB-IP</a> (CC BY 4.0). It
       describes address blocks, so a point is often a provider's data centre.</li>
     </ul>
@@ -383,11 +466,16 @@ def render(nodes, now):
 """
 
 
-def data(nodes, now):
-    return {"generated": int(now), "counts": counts(nodes),
-            "source": "https://github.com/loki-notfound/lateo-map",
-            "location_data": "IP Geolocation by DB-IP, https://db-ip.com, CC BY 4.0",
-            "nodes": nodes}
+def data(nodes, now, hidden=None):
+    out = {"generated": int(now), "counts": counts(nodes),
+           "source": "https://github.com/loki-notfound/lateo-map",
+           "location_data": "IP Geolocation by DB-IP, https://db-ip.com, CC BY 4.0",
+           "nodes": nodes}
+    if hidden is not None:
+        keep = ("country", "country_name", "city", "lat", "lon", "asn", "network", "height", "release")
+        out["counts"]["private"] = len(hidden)
+        out["private"] = [{k: n[k] for k in keep} for n in hidden]
+    return out
 
 
 def _write(path, text):
@@ -420,6 +508,7 @@ def build(db, config, now=None):
         os.chmod(os.path.join(out, name + ".new"), 0o644)
         os.replace(os.path.join(out, name + ".new"), os.path.join(out, name))
     nodes = load_nodes(db, config)
-    _write(os.path.join(out, "nodes.json"), json.dumps(data(nodes, now), indent=1) + "\n")
-    _write(os.path.join(out, "index.html"), render(nodes, now))
+    hidden = load_hidden(db, now)
+    _write(os.path.join(out, "nodes.json"), json.dumps(data(nodes, now, hidden), indent=1) + "\n")
+    _write(os.path.join(out, "index.html"), render(nodes, now, hidden))
     return len(nodes)

@@ -10,6 +10,7 @@ A check is the P2P handshake and get_version on the node's RPC port: the one
 it announces, or else the usual ones. Peers a node shares become addresses to try later.
 """
 
+import json
 import random
 import socket
 import sys
@@ -17,7 +18,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
-from . import P2P_PORT, db as store, geo, mmdb, p2p, release, rpc
+from . import P2P_PORT, db as store, geo, mmdb, own, p2p, release, rpc
 from .addresses import is_public, valid_port
 from .config import split_endpoint
 
@@ -47,6 +48,7 @@ class Probes:
     get_public_nodes = staticmethod(rpc.get_public_nodes)
     resolve = staticmethod(lambda name: [info[4][0] for info in socket.getaddrinfo(
         name, None, type=socket.SOCK_STREAM)])
+    inbound_peers = staticmethod(own.inbound_peers)   # the operator's own nodes only
 
 
 def check(node, config, probes, now):
@@ -223,7 +225,55 @@ def run(db, config, probes=Probes, clock=time.time, sleep=time.sleep, rng=random
             pool.shutdown(wait=True)
     store.prune(db, int(clock()), config.keep_checks, config.forget_after)
     locate(db, config)
+    count_unreachable(db, config, probes, int(clock()))
     return done, answered
+
+
+def count_unreachable(db, config, probes, now, data=None):
+    """Find the inbound peers of the operator's own nodes that are not on
+    the map: nodes that run but cannot be reached from outside. Per node its
+    place, network operator and height are kept, never its address. Returns their number, or
+    None when no own node answered."""
+    if not config.own_nodes:
+        return None
+    seen, answered = {}, 0
+    for entry in config.own_nodes:
+        host, port = split_endpoint(entry, 17767)
+        try:
+            for ip, height in probes.inbound_peers(host, port, config.rpc_timeout).items():
+                seen[ip] = max(seen.get(ip, 0), height)
+            answered += 1
+        except rpc.RpcError:
+            pass
+    if not answered:
+        return None
+    on_map = {row["ip"] for row in db.execute("SELECT ip FROM nodes WHERE on_map = 1")}
+    own_data = data is None
+    try:
+        data = data or geo.open_dir(config.geo_dir)
+    except (OSError, mmdb.FormatError):
+        data = None
+    entries = []
+    try:
+        for ip in sorted(set(seen) - on_map):
+            try:
+                place = data.place(ip) if data is not None else geo.Place()
+            except (ValueError, mmdb.FormatError):
+                place = geo.Place()
+            entries.append({"country": place.country, "country_name": place.country_name,
+                            "city": place.city, "lat": place.lat, "lon": place.lon,
+                            "asn": place.asn, "network": place.network,
+                            "height": seen[ip] or None})
+    finally:
+        if own_data and data is not None:
+            data.close()
+    # ordered by place, so that the order says nothing about the addresses
+    entries.sort(key=lambda x: (x["country_name"] or "~", x["city"] or "~", x["height"] or 0))
+    store.set_meta(db, "unreachable_nodes", json.dumps(entries))
+    store.set_meta(db, "unreachable", len(entries))
+    store.set_meta(db, "unreachable_observers", answered)
+    store.set_meta(db, "unreachable_at", now)
+    return len(entries)
 
 
 def locate(db, config, data=None):

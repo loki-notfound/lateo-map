@@ -24,13 +24,19 @@ map.lateo.dev is being set up with them. Target: Zephyr `v2.3.0`.
 - Shows each node on a map and in a table: its address and ports, the kind of
   node (P2P, RPC or both), city and network operator, whether it answered, its
   height and the release line it appears to run.
-- Writes plain static files. The site runs no code per visitor and makes no
-  requests to other hosts.
+- Writes plain static files. The site runs no code per visitor on the server
+  and makes no requests to other hosts. A small script lets a visitor filter
+  by kind and version, sort, and zoom the map.
 
 What it does not do:
 
-- It does not call administrative RPC methods on a node, also when a node
-  leaves them open, and it never changes anything on a node.
+- It does not call administrative RPC methods on other people's nodes, also
+  when a node leaves them open, and it never changes anything on a node. The
+  one administrative call it knows, `get_connections`, goes only to nodes of
+  the operator listed as `own_nodes`: it finds the private nodes among the
+  peers there, the ones that run but cannot be reached from outside. Of
+  those the map shows the place, the network and the height; their addresses
+  are not stored or shown.
 - It does not show whether a node's RPC is restricted, nor an exact build. It
   does not ask for either.
 - It does not look up host names for addresses.
@@ -75,6 +81,7 @@ shows the ones without a default.
 | `geo_dir` | empty | Directory of the DB-IP files; empty means no locations. |
 | `site_dir` | empty | Webroot the site is written into; empty means no site. |
 | `p2p_seeds`, `dns_seeds`, `rpc_seeds` | empty | Where discovery starts. |
+| `own_nodes` | empty | Your own nodes with unrestricted RPC on a private address, for the private nodes. |
 | `gap_seconds` | `1.0` | Shortest time between the starts of two checks. |
 | `side_by_side` | `4` | Checks under way at the same time. |
 | `run_seconds` | `240` | A run starts no new check after this. |
@@ -109,7 +116,7 @@ The tests use a pretend network, a pretend clock and small data files they
 build themselves; they contact nothing. The layout:
 
 - `lateo_map/p2p.py`, `storage.py`: the P2P handshake and its binary format.
-- `lateo_map/rpc.py`: the two RPC calls.
+- `lateo_map/rpc.py`: the two RPC calls. `own.py`: the count on your own nodes.
 - `lateo_map/collector.py`, `db.py`: one run, and what is remembered.
 - `lateo_map/geo.py`, `mmdb.py`: location and network of an address.
 - `lateo_map/site.py`, `static/`: the site.

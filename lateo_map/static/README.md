@@ -11,12 +11,14 @@ domain), whose outlines the generator puts into the page. The mark files fall
 outside the repository's licence ([TRADEMARKS.md](../../TRADEMARKS.md)).
 
 `assets/map-site.css` holds the additions of this site: the markers for the
-three kinds of node, the filter controls and the sortable table. To change
+kinds of node, the filter controls and the sortable table. To change
 the look, change the house style and copy the new version in.
 
 ## Script
-`assets/map.js` adds filtering, sorting and the link from a marker to its rows.
-The page shows everything without it.
+`assets/map.js` adds the filters for kind and version, search, sorting,
+zooming and moving the map, and the link from a marker to its rows. It draws
+the markers itself, so that they follow the filters and come apart when the
+map is zoomed in. The page shows everything without it.
 
 ## Headers
 `.htaccess` sets the Content Security Policy and the other security headers.

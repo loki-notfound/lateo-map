@@ -17,6 +17,7 @@ class Net:
         self.rpc = {}       # (ip, port) -> Version
         self.public = {}    # (host, port) -> [PublicNode]
         self.names = {}
+        self.inbound = {}   # (host, port) of an own node -> addresses of its inbound peers
         self.calls = []
 
     def handshake(self, ip, port, timeout):
@@ -36,6 +37,12 @@ class Net:
         if (host, port) not in self.public:
             raise rpc.RpcError("refused")
         return self.public[(host, port)]
+
+    def inbound_peers(self, host, port, timeout):
+        self.calls.append(("inbound", host, port))
+        if (host, port) not in self.inbound:
+            raise rpc.RpcError("refused")
+        return dict(self.inbound[(host, port)])
 
     def resolve(self, name):
         if name not in self.names:
@@ -158,9 +165,38 @@ class CollectorTest(unittest.TestCase):
         self.run_once()
         self.assertEqual(self.net.calls[:2], [("public", "node.example", 443), ("p2p", A, 17766)])
 
+    def test_unreachable_nodes_are_counted_on_own_nodes_only(self):
+        self.net.p2p[A] = hs()
+        self.cfg.own_nodes = ["10.0.0.5:17769", "10.0.0.6:17769"]
+        self.net.inbound[("10.0.0.5", 17769)] = {A: 900, B: 900, C: 880}    # A is on the map
+        self.net.inbound[("10.0.0.6", 17769)] = {C: 890, "8.8.4.4": 0}      # C is seen by both
+        self.run_once()
+        self.assertEqual(store.get_meta(self.db, "unreachable"), "3")
+        self.assertEqual(store.get_meta(self.db, "unreachable_observers"), "2")
+        import json
+        kept = json.loads(store.get_meta(self.db, "unreachable_nodes"))
+        self.assertEqual(sorted(str(k["height"]) for k in kept), ["890", "900", "None"])
+        self.assertEqual(set(kept[0]), {"country", "country_name", "city", "lat", "lon", "asn", "network", "height"})
+        # the admin call went to the own nodes and to nobody else
+        self.assertEqual({c[1] for c in self.net.calls if c[0] == "inbound"}, {"10.0.0.5", "10.0.0.6"})
+        # and no address of an unreachable node was kept
+        self.assertEqual([r["ip"] for r in self.db.execute("SELECT ip FROM nodes")], [A])
+        for row in self.db.execute("SELECT value FROM meta"):
+            for address in (B, C, "8.8.4.4"):
+                self.assertNotIn(address, row["value"])
+
+    def test_no_own_node_or_no_answer_means_no_count(self):
+        self.run_once()
+        self.assertIsNone(store.get_meta(self.db, "unreachable"))
+        self.assertEqual([c for c in self.net.calls if c[0] == "inbound"], [])
+        self.cfg.own_nodes = ["10.0.0.5:17769"]
+        self.now += HOUR
+        self.run_once()
+        self.assertIsNone(store.get_meta(self.db, "unreachable"))
+
     def test_never_calls_anything_else(self):
         self.assertEqual(sorted(n for n in vars(collector.Probes) if not n.startswith("_")),
-                         ["get_public_nodes", "get_version", "handshake", "resolve"])
+                         ["get_public_nodes", "get_version", "handshake", "inbound_peers", "resolve"])
 
     def test_offline_then_off_the_map_then_rare_retries_then_back(self):
         self.net.p2p[A] = hs()

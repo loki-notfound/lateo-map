@@ -63,6 +63,22 @@ class RpcTest(unittest.TestCase):
         public = [n for n in dir(rpc) if n.startswith("get_")]
         self.assertEqual(sorted(public), ["get_public_nodes", "get_version"])
 
+    def test_inbound_peers_of_an_own_node(self):
+        from lateo_map import own
+        self.serve("/json_rpc", {"result": {"connections": [
+            {"incoming": True, "host": "8.8.8.8", "port": "40000", "height": 900},
+            {"incoming": True, "host": "8.8.8.8", "port": "40001", "height": "x"},
+            {"incoming": False, "host": "9.9.9.9", "port": "17766"},
+            {"incoming": True, "host": "192.168.1.4"},
+            {"incoming": True, "host": 5},
+            "junk",
+        ]}})
+        self.assertEqual(own.inbound_peers("127.0.0.1", self.port), {"8.8.8.8": 900})
+        self.assertEqual(json.loads(Handler.seen[0][2])["method"], "get_connections")
+        self.serve("/json_rpc", {"error": {"code": -32601}})
+        with self.assertRaises(rpc.RpcError):
+            own.inbound_peers("127.0.0.1", self.port)
+
     def test_bad_answers(self):
         for payload in (b"<html>", b"[]", {"error": {"code": -32601}}, b"x" * (rpc.MAX_ANSWER + 10)):
             self.serve("/json_rpc", payload)
@@ -138,6 +154,9 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(release.from_p2p(10), "v2.2.0 or later")
         self.assertEqual(release.from_p2p(8), "v2.1.0 or later")
         self.assertIsNone(release.from_p2p(0))
+        self.assertEqual(release.from_height(909000), "v2.3.0")
+        self.assertEqual(release.from_height(520000), "v2.2.0 or later")
+        self.assertIsNone(release.from_height(10))
 
 if __name__ == "__main__":
     unittest.main()

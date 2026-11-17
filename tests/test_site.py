@@ -122,14 +122,62 @@ class SiteTest(unittest.TestCase):
                 distance = ((a["x"] - b["x"]) ** 2 + (a["y"] - b["y"]) ** 2) ** 0.5
                 self.assertGreaterEqual(distance + 1, site.radius(len(a["nodes"])) + site.radius(len(b["nodes"])))
 
+    def hide(self, entries, at=NOW - 600):
+        store.set_meta(self.db, "unreachable_nodes", json.dumps(entries))
+        store.set_meta(self.db, "unreachable", len(entries))
+        store.set_meta(self.db, "unreachable_at", at)
+
+    def test_private_nodes_are_listed_without_an_address_and_off_at_first(self):
+        add(self.db, "8.8.8.1")
+        self.assertNotIn("Private", self.page())
+        entry = {"country": "NL", "country_name": "Netherlands", "city": "Utrecht",
+                 "lat": 52.1, "lon": 5.1, "asn": 64501, "network": "Home Net", "height": 909000}
+        self.hide([entry, dict(entry, city="Zwolle", lat=52.5, lon=6.1, height=None)])
+        page = self.page()
+        self.assertIn('Private nodes</span><span class="lt-stat-value">2<', page)
+        self.assertIn("Public and private nodes", page)
+        self.assertEqual(page.count('data-kind="private"'), 2)
+        # off until a visitor switches them on: rows hidden, no marker, the switch not pressed
+        self.assertIn('<tr id="h-1" hidden data-kind="private" data-status="online" data-release="v2.3.0"', page)
+        self.assertEqual(page.count('class="lt-map-marker"'), 1)
+        self.assertIn('data-filter="kind" data-value="private" aria-pressed="false"', page)
+        self.assertIn('data-filter="kind" data-value="p2p" aria-pressed="true"', page)
+        self.assertIn("not shown", page)
+        self.assertIn('data-filter="kind" data-value="private"', page)
+        self.assertIn("1 public nodes, 1 answering now; 2 private nodes (switched off", page)
+        with open(os.path.join(self.dir.name, "nodes.json"), encoding="utf-8") as f:
+            data = json.load(f)
+        self.assertEqual(data["counts"]["private"], 2)
+        self.assertEqual(data["counts"]["nodes"], 1)
+        self.assertEqual(sorted(data["private"][0]),
+                         ["asn", "city", "country", "country_name", "height", "lat", "lon",
+                          "network", "release"])
+        self.assertIn("Home Net", page)
+        self.assertIn('<li data-filter="kind" data-value="private">', page)
+        self.assertEqual([n["ip"] for n in data["nodes"]], ["8.8.8.1"])
+        self.hide([entry], at=NOW - 3 * 3600)
+        self.assertNotIn("Private", self.page())
+
+    def test_filters_for_kind_and_version(self):
+        add(self.db, "8.8.8.1", release="v2.3.0")
+        add(self.db, "8.8.8.2", release="v2.2.0 or later", rpc=True)
+        page = self.page()
+        for value in ("v2.3.0", "v2.2.0 or later"):
+            self.assertIn(f'data-filter="release" data-value="{value}"', page)
+        for kind in ("p2p", "rpc", "both"):
+            self.assertIn(f'data-filter="kind" data-value="{kind}"', page)
+        self.assertNotIn('data-value="private"', page)
+        self.assertIn('data-release="v2.2.0 or later"', page)
+        self.assertRegex(page, r'<tr id="n-8-8-8-1"[^>]* data-x="522\.2" data-y="111\.1"')
+
     def test_empty_map(self):
         page = self.page()
-        self.assertIn("0 nodes, 0 answering now", page)
+        self.assertIn("0 public nodes, 0 answering now", page)
 
     def test_projection(self):
         self.assertEqual(site.project(90, -180), (0.0, 0.0))
         self.assertEqual(site.project(0, 0), (500.0, 250.0))
-        self.assertEqual(site.row_id("2606:4700::1"), "n-2606-4700--1")
+        self.assertEqual(site.row_id({"ip": "2606:4700::1"}), "n-2606-4700--1")
 
 
 if __name__ == "__main__":

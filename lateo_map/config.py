@@ -18,6 +18,8 @@ class Config:
     p2p_seeds: list = field(default_factory=list)   # "address:port"
     dns_seeds: list = field(default_factory=list)   # names that resolve to P2P nodes
     rpc_seeds: list = field(default_factory=list)   # "host:port", asked for public peers only
+    # the operator's own nodes with unrestricted RPC on a private address: see own.py
+    own_nodes: list = field(default_factory=list)   # "host:port"
     # pace
     run_seconds: int = 240          # a run starts no new check after this
     gap_seconds: float = 1.0        # at least this long between the starts of two checks

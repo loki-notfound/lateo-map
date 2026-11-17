@@ -46,3 +46,17 @@ def from_p2p(top_version):
         return _BY_KNOWN_HARDFORK[NEWEST_KNOWN]
     line = _BY_ACTIVE_HARDFORK.get(top_version)
     return f"{line} or later" if line else None
+
+
+# height at which each hardfork became active on mainnet
+_FORK_HEIGHTS = ((536000, 11), (511000, 10), (508000, 9), (481500, 8), (433000, 7),
+                 (360000, 6), (295000, 5), (294000, 4), (89300, 3))
+
+
+def from_height(height):
+    """Release line for a node of which only the height is known: it follows
+    the chain up to there, so it runs the hardfork active at that height."""
+    for start, fork in _FORK_HEIGHTS:
+        if height >= start:
+            return from_p2p(fork)
+    return None
