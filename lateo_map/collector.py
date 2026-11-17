@@ -142,27 +142,29 @@ def sow(db, config, probes, now, rng):
     if now - last < config.ask_peers_every:
         return
     store.set_meta(db, "sown", now)
-    heard = []
+    first, later = [], []
     for seed in config.p2p_seeds:
         host, port = split_endpoint(seed, P2P_PORT)
-        heard.append((host, port, 0))
+        first.append((host, port, 0))
     for name in config.dns_seeds:
         try:
-            heard += [(ip, P2P_PORT, 0) for ip in probes.resolve(name)]
+            first += [(ip, P2P_PORT, 0) for ip in probes.resolve(name)]
         except OSError:
             pass
     for seed in config.rpc_seeds:
         host, port = split_endpoint(seed, 443)
         try:
-            heard += [(n.host, 0, n.rpc_port) for n in probes.get_public_nodes(host, port, config.rpc_timeout)]
+            later += [(n.host, 0, n.rpc_port) for n in probes.get_public_nodes(host, port, config.rpc_timeout)]
         except rpc.RpcError:
             pass
-    heard = [(ip, p, r) for ip, p, r in heard if is_public(ip) and (p == 0 or valid_port(p))]
     room = config.max_addresses - store.count(db)
-    for ip, p2p_port, rpc_port in heard:
-        # seeds are tried in this run, not spread out
-        if store.hear(db, ip, p2p_port, rpc_port, now, now if last == 0 else now + 60, room > 0):
-            room -= 1
+    for ip, p2p_port, rpc_port in first:
+        # the seeds themselves go first in this run
+        if is_public(ip) and valid_port(p2p_port):
+            if store.hear(db, ip, p2p_port, rpc_port, now, now - 1, room > 0):
+                room -= 1
+    # what the RPC seeds list is hearsay like any peer list
+    _hear_all(db, config, later, now, rng)
 
 
 def run(db, config, probes=Probes, clock=time.time, sleep=time.sleep, rng=random):

@@ -92,8 +92,10 @@ def hear(db, ip, p2p_port, rpc_port, now, first_check, room=True):
 
 
 def next_due(db, now):
-    return db.execute("SELECT * FROM nodes WHERE next_check <= ? ORDER BY next_check LIMIT 1",
-                      (now,)).fetchone()
+    """The address to check now: nodes on the map go before addresses that
+    are not, so that a backlog of silent addresses never delays them."""
+    return db.execute("SELECT * FROM nodes WHERE next_check <= ?"
+                      " ORDER BY on_map DESC, next_check LIMIT 1", (now,)).fetchone()
 
 
 def record_answer(db, ip, now, next_check, *, has_p2p, has_rpc, p2p_port, rpc_port,

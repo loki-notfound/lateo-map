@@ -19,8 +19,8 @@ class Config:
     # pace
     run_seconds: int = 240          # a run starts no new check after this
     gap_seconds: float = 1.0        # at least this long between two nodes
-    p2p_timeout: float = 6.0
-    rpc_timeout: float = 6.0
+    p2p_timeout: float = 5.0
+    rpc_timeout: float = 5.0
     # how often
     check_every: int = HOUR         # a node that is on the map
     check_jitter: int = 300

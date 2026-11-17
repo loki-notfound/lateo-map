@@ -113,6 +113,8 @@ class CollectorTest(unittest.TestCase):
         self.net.public[("node.example", 443)] = [rpc.PublicNode(B, 17767)]
         self.net.rpc[(B, 17767)] = rpc.Version(13, 10, 800)
         self.run_once()
+        self.now = self.node(B)["next_check"]
+        self.run_once()
         b = self.node(B)
         self.assertEqual((b["on_map"], b["has_p2p"], b["has_rpc"], b["release"]), (1, 0, 1, "v2.2.0"))
         # the seed itself is a source, not a node
@@ -122,6 +124,25 @@ class CollectorTest(unittest.TestCase):
         self.now += HOUR
         self.run_once()
         self.assertEqual(self.net.calls, [("version", B, 17767)])
+
+    def test_nodes_on_the_map_go_before_a_backlog_of_silent_addresses(self):
+        self.cfg.p2p_seeds = []
+        for i in range(1, 30):
+            store.hear(self.db, f"8.8.4.{i}", 17766, 0, 0, 5)       # long overdue, silent
+        store.hear(self.db, A, 17766, 0, 0, 999_999)
+        self.db.execute("UPDATE nodes SET on_map = 1, has_p2p = 1, last_ok = 999_000 WHERE ip = ?", (A,))
+        self.net.p2p[A] = hs()
+        self.cfg.run_seconds = 3
+        self.run_once()
+        self.assertEqual(self.net.calls[0], ("p2p", A, 17766))
+
+    def test_seeds_go_first_and_seed_lists_are_spread(self):
+        self.cfg.rpc_seeds = ["node.example:443"]
+        self.net.public[("node.example", 443)] = [rpc.PublicNode(f"8.8.4.{i}", 17767) for i in range(1, 30)]
+        self.net.p2p[A] = hs()
+        self.cfg.run_seconds = 1
+        self.run_once()
+        self.assertEqual(self.net.calls[:2], [("public", "node.example", 443), ("p2p", A, 17766)])
 
     def test_never_calls_anything_else(self):
         self.assertEqual(sorted(n for n in vars(collector.Probes) if not n.startswith("_")),
