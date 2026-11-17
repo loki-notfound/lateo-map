@@ -1,15 +1,21 @@
-"""Command line of the collector. So far: one manual check of one node.
+"""Command line of the collector.
+
+    python3 -m lateo_map run --config FILE
+        One run, as cron starts it. A second run at the same time exits.
+
+    python3 -m lateo_map status --config FILE
+        Counts of what the database holds. No addresses.
 
     python3 -m lateo_map check HOST [--p2p-port N] [--rpc-port N]
-
-It prints what the map would know about the node. Addresses of the node's
-peers are counted, not printed.
+        One node by hand. Prints what the map would know about it; the
+        node's peers are counted, not printed.
 """
 
 import argparse
+import fcntl
 import sys
 
-from . import P2P_PORT, RPC_PORT, p2p, release, rpc
+from . import P2P_PORT, RPC_PORT, collector, config, db, p2p, release, rpc
 
 
 def check(args):
@@ -39,6 +45,38 @@ def check(args):
     return 0 if found else 1
 
 
+def run(args):
+    settings = config.load(args.config)
+    with open(settings.database + ".lock", "w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print("another run is busy")
+            return 0
+        database = db.connect(settings.database)
+        try:
+            done, answered = collector.run(database, settings)
+        finally:
+            database.close()
+        print(f"{done} checks, {answered} answered")
+    return 0
+
+
+def status(args):
+    database = db.connect(config.load(args.config).database)
+    row = database.execute(
+        "SELECT count(*) AS known, coalesce(sum(on_map), 0) AS on_map,"
+        " coalesce(sum(on_map AND misses = 0), 0) AS answering,"
+        " coalesce(sum(on_map AND has_p2p AND NOT has_rpc), 0) AS p2p_only,"
+        " coalesce(sum(on_map AND has_rpc AND NOT has_p2p), 0) AS rpc_only,"
+        " coalesce(sum(on_map AND has_p2p AND has_rpc), 0) AS both,"
+        " coalesce(sum(last_check IS NULL), 0) AS untried FROM nodes").fetchone()
+    database.close()
+    for key in row.keys():
+        print(f"{key.replace('_', ' '):10} {row[key]}")
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="lateo_map")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -48,6 +86,11 @@ def main(argv=None):
     c.add_argument("--rpc-port", type=int, default=RPC_PORT, help="0 skips the rpc calls")
     c.add_argument("--timeout", type=float, default=8.0)
     c.set_defaults(run=check)
+    for name, function, text in (("run", run, "one run of the collector"),
+                                 ("status", status, "counts of what is known")):
+        c = sub.add_parser(name, help=text)
+        c.add_argument("--config", required=True)
+        c.set_defaults(run=function)
     args = parser.parse_args(argv)
     return args.run(args)
 

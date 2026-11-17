@@ -1,0 +1,15 @@
+# Settings of the collector. Copy this file to a place outside the
+# repository and outside the webroot, and fill it in.
+# The addresses below are documentation addresses, not nodes.
+
+database = "/path/outside/the/webroot/map.sqlite"
+
+# Where discovery starts.
+p2p_seeds = ["192.0.2.10:17766", "192.0.2.11:17766"]
+dns_seeds = []
+# Asked for their public peers only; they get no place on the map by this.
+rpc_seeds = ["node.example:443"]
+
+# Everything else has a default; see lateo_map/config.py. For example:
+# gap_seconds = 1.0     # pause between two nodes
+# check_every = 3600    # seconds between checks of a node on the map
