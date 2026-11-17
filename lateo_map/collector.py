@@ -17,7 +17,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
-from . import P2P_PORT, RPC_PORT, db as store, p2p, release, rpc
+from . import P2P_PORT, RPC_PORT, db as store, geo, mmdb, p2p, release, rpc
 from .addresses import is_public, valid_port
 from .config import split_endpoint
 
@@ -220,4 +220,30 @@ def run(db, config, probes=Probes, clock=time.time, sleep=time.sleep, rng=random
         if own_pool:
             pool.shutdown(wait=True)
     store.prune(db, int(clock()), config.keep_checks, config.forget_after)
+    locate(db, config)
     return done, answered
+
+
+def locate(db, config, data=None):
+    """Look up location and network of the nodes on the map that have none
+    from the current data. Returns how many were looked up."""
+    own = data is None
+    try:
+        data = data or geo.open_dir(config.geo_dir)
+    except (OSError, mmdb.FormatError) as e:
+        print(f"location data unusable: {e}", file=sys.stderr)
+        return 0
+    if data is None:
+        return 0
+    try:
+        ips = store.unlocated(db, data.version)
+        for ip in ips:
+            try:
+                place = data.place(ip)
+            except (ValueError, mmdb.FormatError):
+                place = geo.Place()
+            store.set_place(db, ip, place, data.version)
+        return len(ips)
+    finally:
+        if own:
+            data.close()

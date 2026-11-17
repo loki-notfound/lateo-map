@@ -6,6 +6,9 @@
     python3 -m lateo_map status --config FILE
         Counts of what the database holds. No addresses.
 
+    python3 -m lateo_map geo-fetch --config FILE
+        Download this month's DB-IP Lite files into `geo_dir`. Once a month.
+
     python3 -m lateo_map check HOST [--p2p-port N] [--rpc-port N]
         One node by hand. Prints what the map would know about it; the
         node's peers are counted, not printed.
@@ -15,7 +18,7 @@ import argparse
 import fcntl
 import sys
 
-from . import P2P_PORT, RPC_PORT, collector, config, db, p2p, release, rpc
+from . import P2P_PORT, RPC_PORT, collector, config, db, geo, p2p, release, rpc
 
 
 def check(args):
@@ -70,10 +73,21 @@ def status(args):
         " coalesce(sum(on_map AND has_p2p AND NOT has_rpc), 0) AS p2p_only,"
         " coalesce(sum(on_map AND has_rpc AND NOT has_p2p), 0) AS rpc_only,"
         " coalesce(sum(on_map AND has_p2p AND has_rpc), 0) AS both,"
+        " coalesce(sum(on_map AND lat IS NOT NULL), 0) AS located,"
         " coalesce(sum(last_check IS NULL), 0) AS untried FROM nodes").fetchone()
     database.close()
     for key in row.keys():
         print(f"{key.replace('_', ' '):10} {row[key]}")
+    return 0
+
+
+def geo_fetch(args):
+    settings = config.load(args.config)
+    if not settings.geo_dir:
+        print("the setting 'geo_dir' is missing")
+        return 1
+    for kind, month in geo.fetch(settings.geo_dir).items():
+        print(f"{kind}: {month}")
     return 0
 
 
@@ -87,7 +101,8 @@ def main(argv=None):
     c.add_argument("--timeout", type=float, default=8.0)
     c.set_defaults(run=check)
     for name, function, text in (("run", run, "one run of the collector"),
-                                 ("status", status, "counts of what is known")):
+                                 ("status", status, "counts of what is known"),
+                                 ("geo-fetch", geo_fetch, "download the location data")):
         c = sub.add_parser(name, help=text)
         c.add_argument("--config", required=True)
         c.set_defaults(run=function)

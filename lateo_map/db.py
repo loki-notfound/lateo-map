@@ -28,7 +28,16 @@ CREATE TABLE IF NOT EXISTS nodes (
     last_check  INTEGER,
     next_check  INTEGER NOT NULL,
     asked_peers INTEGER NOT NULL DEFAULT 0,
-    tried_rpc   INTEGER NOT NULL DEFAULT 0    -- the usual RPC port, unannounced
+    tried_rpc   INTEGER NOT NULL DEFAULT 0,   -- the usual RPC port, unannounced
+    country     TEXT,                         -- location and network: see geo.py
+    country_name TEXT,
+    region      TEXT,
+    city        TEXT,
+    lat         REAL,
+    lon         REAL,
+    asn         INTEGER,
+    network     TEXT,
+    located     INTEGER NOT NULL DEFAULT 0    -- version of the data used, 0: not yet
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS nodes_next_check ON nodes (next_check);
 CREATE TABLE IF NOT EXISTS checks (
@@ -40,7 +49,22 @@ CREATE TABLE IF NOT EXISTS checks (
 );
 CREATE INDEX IF NOT EXISTS checks_at ON checks (at);
 """
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
+
+# from one schema version to the next
+MIGRATIONS = {
+    "1": """
+        ALTER TABLE nodes ADD COLUMN country TEXT;
+        ALTER TABLE nodes ADD COLUMN country_name TEXT;
+        ALTER TABLE nodes ADD COLUMN region TEXT;
+        ALTER TABLE nodes ADD COLUMN city TEXT;
+        ALTER TABLE nodes ADD COLUMN lat REAL;
+        ALTER TABLE nodes ADD COLUMN lon REAL;
+        ALTER TABLE nodes ADD COLUMN asn INTEGER;
+        ALTER TABLE nodes ADD COLUMN network TEXT;
+        ALTER TABLE nodes ADD COLUMN located INTEGER NOT NULL DEFAULT 0;
+    """,
+}
 
 
 def connect(path):
@@ -51,7 +75,12 @@ def connect(path):
     db.executescript(SCHEMA)
     db.execute("INSERT OR IGNORE INTO meta VALUES ('schema', ?)", (SCHEMA_VERSION,))
     found = get_meta(db, "schema")
+    while found in MIGRATIONS:
+        db.executescript("BEGIN;" + MIGRATIONS[found] + "COMMIT;")
+        found = str(int(found) + 1)
+        set_meta(db, "schema", found)
     if found != SCHEMA_VERSION:
+        db.close()
         raise RuntimeError(f"database has schema {found}, this code needs {SCHEMA_VERSION}")
     return db
 
@@ -137,3 +166,16 @@ def prune(db, now, keep_checks, forget_after):
     db.execute("DELETE FROM checks WHERE at < ?", (now - keep_checks,))
     db.execute("DELETE FROM nodes WHERE on_map = 0 AND last_heard < ?", (now - forget_after,))
     db.execute("DELETE FROM checks WHERE ip NOT IN (SELECT ip FROM nodes)")
+
+
+def unlocated(db, version):
+    """Addresses on the map whose location was not looked up in this data."""
+    return [row["ip"] for row in db.execute(
+        "SELECT ip FROM nodes WHERE on_map = 1 AND located != ?", (version,))]
+
+
+def set_place(db, ip, place, version):
+    db.execute("UPDATE nodes SET country = ?, country_name = ?, region = ?, city = ?, lat = ?,"
+               " lon = ?, asn = ?, network = ?, located = ? WHERE ip = ?",
+               (place.country, place.country_name, place.region, place.city, place.lat,
+                place.lon, place.asn, place.network, version, ip))
