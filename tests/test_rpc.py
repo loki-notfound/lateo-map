@@ -6,6 +6,9 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from lateo_map import USER_AGENT, release, rpc
 
 
+FORKS = [{"hf_version": v, "height": h} for v, h in rpc.MAINNET_FORKS.items()]
+
+
 class Handler(BaseHTTPRequestHandler):
     answers = {}
     seen = []
@@ -48,7 +51,7 @@ class RpcTest(unittest.TestCase):
     def test_get_version(self):
         self.serve("/json_rpc", {"result": {
             "version": 196621, "current_height": 909229,
-            "hard_forks": [{"hf_version": 1, "height": 1}, {"hf_version": 11, "height": 536000}],
+            "hard_forks": FORKS,
         }})
         v = rpc.get_version("127.0.0.1", self.port)
         self.assertEqual((v.rpc_minor, v.max_hardfork, v.height), (13, 11, 909229))
@@ -71,12 +74,30 @@ class RpcTest(unittest.TestCase):
 
     def test_odd_fields_do_not_crash(self):
         self.serve("/json_rpc", {"result": {"version": "x", "current_height": None,
-                                            "hard_forks": [1, {"hf_version": "9"}, {}]}})
+                                            "hard_forks": FORKS[:3] + [1, {"hf_version": "9"}, {}]}})
         v = rpc.get_version("127.0.0.1", self.port)
-        self.assertEqual((v.rpc_minor, v.max_hardfork, v.height), (0, 0, 0))
+        self.assertEqual((v.rpc_minor, v.max_hardfork, v.height), (0, 3, 0))
+
+    def test_only_zephyr_mainnet_counts(self):
+        other_coin = [{"hf_version": 1, "height": 1}, {"hf_version": 2, "height": 1009827},
+                      {"hf_version": 16, "height": 2689608}]
+        future = FORKS + [{"hf_version": 12, "height": 990000}]
+        for forks, good in ((other_coin, False), ([], False), (FORKS[:1], False),
+                            (FORKS[:3], True), (future, True)):
+            self.serve("/json_rpc", {"result": {"version": 196621, "hard_forks": forks}})
+            if good:
+                rpc.get_version("127.0.0.1", self.port)
+            else:
+                with self.assertRaises(rpc.RpcError):
+                    rpc.get_version("127.0.0.1", self.port)
+
+    def test_certificate_is_checked_by_name_only(self):
+        self.assertIs(rpc._opener_for("node.example"), rpc._by_name)
+        self.assertIs(rpc._opener_for("8.8.8.8"), rpc._by_address)
+        self.assertIs(rpc._opener_for("127.0.0.1"), rpc._by_name)
 
     def test_redirect_is_refused(self):
-        self.serve("/elsewhere", {"result": {"version": 196621, "hard_forks": []}})
+        self.serve("/elsewhere", {"result": {"version": 196621, "hard_forks": FORKS}})
         self.serve("/json_rpc", f"http://127.0.0.1:{self.port}/elsewhere".encode(), status=307)
         with self.assertRaises(rpc.RpcError):
             rpc.get_version("127.0.0.1", self.port)

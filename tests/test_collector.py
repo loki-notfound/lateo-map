@@ -292,7 +292,7 @@ class CollectorTest(unittest.TestCase):
             self.run_once()
             self.now += HOUR
         tries = [c for c in self.net.calls if c[0] == "version"]
-        self.assertEqual(tries, [("version", A, 17767)] * 2)
+        self.assertEqual(tries, [("version", A, 17767), ("version", A, 443), ("version", A, 80)] * 2)
         self.assertEqual(self.node(A)["has_rpc"], 0)
 
     def test_port_from_hearsay_then_the_usual_one(self):
@@ -300,7 +300,19 @@ class CollectorTest(unittest.TestCase):
         store.hear(self.db, A, 17766, 8888, 1_000_000, 1_000_000)
         self.run_once()
         self.assertEqual([c for c in self.net.calls if c[0] == "version"],
-                         [("version", A, 8888), ("version", A, 17767)])
+                         [("version", A, 8888), ("version", A, 17767), ("version", A, 443),
+                          ("version", A, 80)])
+
+    def test_rpc_behind_a_web_server_is_found_on_443(self):
+        self.net.p2p[A] = hs()
+        self.net.rpc[(A, 443)] = rpc.Version(13, 11, 905)
+        self.net.public[(A, 443)] = []
+        self.run_once()
+        self.assertEqual((self.node(A)["has_rpc"], self.node(A)["rpc_port"]), (1, 443))
+        self.net.calls.clear()
+        self.now += HOUR
+        self.run_once()
+        self.assertEqual([c for c in self.net.calls if c[0] == "version"], [("version", A, 443)])
 
     def test_announced_port_goes_first_and_is_the_only_one_tried(self):
         self.net.p2p[A] = hs(rpc_port=18089)

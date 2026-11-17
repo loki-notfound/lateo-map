@@ -7,7 +7,7 @@ check an hour (plus or minus a few minutes) after the last one, the checks
 spread over the hour by themselves.
 
 A check is the P2P handshake and get_version on the node's RPC port: the one
-it announces, or else the usual one. Peers a node shares become addresses to try later.
+it announces, or else the usual ones. Peers a node shares become addresses to try later.
 """
 
 import random
@@ -17,7 +17,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
-from . import P2P_PORT, RPC_PORT, db as store, geo, mmdb, p2p, release, rpc
+from . import P2P_PORT, db as store, geo, mmdb, p2p, release, rpc
 from .addresses import is_public, valid_port
 from .config import split_endpoint
 
@@ -69,13 +69,15 @@ def check(node, config, probes, now):
         out.pruned = hs.pruned
         out.heard += [(peer.host, peer.port, peer.rpc_port) for peer in hs.peers]
     # Which RPC port, in order: the one the node announces itself, the one
-    # that worked last time, the one a peer gave, the usual one. A node can
-    # offer RPC without announcing it. A port that is not announced and did
-    # not work last time is tried once a day, not every hour.
+    # that worked last time, the one a peer gave, the usual ones (the
+    # daemon's own, and 443 and 80 for a node behind a web server). A node
+    # can offer RPC without announcing it. Ports that are not announced and
+    # did not work last time are tried once a day, not every hour.
     announced = hs.rpc_port if hs is not None else 0
     out.rpc_port = announced or node["rpc_port"]
     sure = bool(announced) or bool(node["has_rpc"] and node["rpc_port"])
-    ports = [out.rpc_port] if sure else list(dict.fromkeys(p for p in (out.rpc_port, RPC_PORT) if p))
+    ports = [out.rpc_port] if sure else list(dict.fromkeys(
+        p for p in (out.rpc_port, *config.usual_rpc_ports) if p))
     if sure or now - node["tried_rpc"] >= config.try_usual_rpc_every:
         out.tried_rpc = not sure
         version = port = None

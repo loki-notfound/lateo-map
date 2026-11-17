@@ -6,8 +6,13 @@ themselves. Both are meant for the public and answer on every node. Nothing
 else is ever asked: no `get_info`, no administrative method.
 
 Requests go straight to the node: no proxy, and a redirect is refused, so a
-node cannot point the collector at another host. HTTPS is used on port 443,
-with the certificate checked.
+node cannot point the collector at another host. HTTPS is used on port 443.
+The certificate is checked when the node is asked by name. A node asked by
+its bare address cannot have a certificate that proves anything, so there
+the encryption is used without the check; nothing secret is sent either way.
+
+An answer counts only when its hardfork heights are those of Zephyr's
+mainnet. Daemons of related coins answer the same call on the same ports.
 """
 
 import json
@@ -17,10 +22,14 @@ import urllib.request
 from dataclasses import dataclass
 
 from . import USER_AGENT
-from .addresses import is_public, valid_port
+from .addresses import is_public, parse_public, valid_port
 
 MAX_ANSWER = 1 << 20
 MAX_PUBLIC_NODES = 2000
+
+# hardfork -> height on Zephyr's mainnet
+MAINNET_FORKS = {1: 1, 2: 2000, 3: 89300, 4: 294000, 5: 295000, 6: 360000, 7: 433000,
+                 8: 481500, 9: 508000, 10: 511000, 11: 536000}
 
 
 class RpcError(Exception):
@@ -45,11 +54,20 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-_opener = urllib.request.build_opener(
-    urllib.request.ProxyHandler({}),
-    _NoRedirect,
-    urllib.request.HTTPSHandler(context=ssl.create_default_context()),
-)
+def _opener(context):
+    return urllib.request.build_opener(
+        urllib.request.ProxyHandler({}), _NoRedirect, urllib.request.HTTPSHandler(context=context))
+
+
+_unchecked = ssl.create_default_context()
+_unchecked.check_hostname = False
+_unchecked.verify_mode = ssl.CERT_NONE
+_by_name = _opener(ssl.create_default_context())
+_by_address = _opener(_unchecked)
+
+
+def _opener_for(host):
+    return _by_address if parse_public(host) is not None else _by_name
 
 
 def _url(host, port, path):
@@ -66,7 +84,7 @@ def _post(host, port, path, payload, timeout):
         headers={"Content-Type": "application/json", "User-Agent": USER_AGENT},
     )
     try:
-        with _opener.open(request, timeout=timeout) as response:
+        with _opener_for(host).open(request, timeout=timeout) as response:
             raw = response.read(MAX_ANSWER + 1)
     except urllib.error.HTTPError as e:
         raise RpcError(f"HTTP {e.code}") from None
@@ -95,7 +113,11 @@ def get_version(host, port, timeout=6.0):
         raise RpcError("no result")
     forks = result.get("hard_forks")
     forks = forks if isinstance(forks, list) else []
-    known = [_int(f.get("hf_version")) for f in forks if isinstance(f, dict)]
+    heights = {_int(f.get("hf_version")): _int(f.get("height")) for f in forks if isinstance(f, dict)}
+    ours = {v: h for v, h in heights.items() if v in MAINNET_FORKS}
+    if len(ours) < 2 or any(MAINNET_FORKS[v] != h for v, h in ours.items()):
+        raise RpcError("not Zephyr mainnet")
+    known = list(heights)
     return Version(
         rpc_minor=_int(result.get("version")) & 0xFFFF,
         max_hardfork=max(known, default=0),

@@ -29,7 +29,8 @@ class Config:
     retry_after: list = field(default_factory=lambda: [DAY, 2 * DAY, 4 * DAY, 7 * DAY])
     new_within: int = 6 * HOUR      # first check of a new address, spread over this
     ask_peers_every: int = 6 * HOUR  # get_public_nodes per node, and the seeds
-    try_usual_rpc_every: int = DAY  # the usual RPC port on a node that announces none
+    try_usual_rpc_every: int = DAY  # the usual RPC ports on a node that announces none
+    usual_rpc_ports: list = field(default_factory=lambda: [17767, 443, 80])
     # how long
     offline_after_misses: int = 2
     drop_after: int = 2 * DAY       # unreachable this long: off the map
