@@ -18,7 +18,8 @@ class Config:
     rpc_seeds: list = field(default_factory=list)   # "host:port", asked for public peers only
     # pace
     run_seconds: int = 240          # a run starts no new check after this
-    gap_seconds: float = 1.0        # at least this long between two nodes
+    gap_seconds: float = 1.0        # at least this long between the starts of two checks
+    side_by_side: int = 4           # checks under way at the same time, at most
     p2p_timeout: float = 5.0
     rpc_timeout: float = 5.0
     # how often

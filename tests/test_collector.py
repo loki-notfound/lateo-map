@@ -1,5 +1,7 @@
 import random
+import threading
 import unittest
+from concurrent.futures import Future
 
 from lateo_map import collector, config, db as store, p2p, rpc
 
@@ -41,6 +43,18 @@ class Net:
         return self.names[name]
 
 
+class Inline:
+    """Runs a check at once, so that a test has one order of events."""
+
+    def submit(self, fn, *args):
+        future = Future()
+        try:
+            future.set_result(fn(*args))
+        except Exception as e:
+            future.set_exception(e)
+        return future
+
+
 def hs(rpc_port=0, peers=(), height=900, top=11):
     return p2p.Handshake(height=height, top_version=top, my_port=17766, rpc_port=rpc_port,
                          pruned=False, peers=list(peers))
@@ -66,7 +80,7 @@ class CollectorTest(unittest.TestCase):
         self.now += seconds
 
     def run_once(self):
-        return collector.run(self.db, self.cfg, self.net, self.clock, self.sleep, self.rng)
+        return collector.run(self.db, self.cfg, self.net, self.clock, self.sleep, self.rng, Inline())
 
     def node(self, ip):
         return self.db.execute("SELECT * FROM nodes WHERE ip = ?", (ip,)).fetchone()
@@ -191,6 +205,51 @@ class CollectorTest(unittest.TestCase):
         done, answered = self.run_once()
         self.assertEqual((done, answered), (10, 0))
         self.assertEqual(self.slept, [1.0] * 10)
+
+    def test_checks_side_by_side_keep_the_pace_and_ask_each_node_once(self):
+        ips = [f"8.8.4.{i}" for i in range(1, 13)]
+        self.cfg.p2p_seeds = [f"{ip}:17766" for ip in ips]
+        self.cfg.gap_seconds = 0.05
+        self.cfg.side_by_side = 4
+        self.cfg.try_usual_rpc_every = 10**9
+        lock, state, starts = threading.Lock(), {"now": 0, "most": 0}, []
+        import time as real
+
+        def slow_handshake(ip, port, timeout):
+            with lock:
+                starts.append((real.monotonic(), ip))
+                state["now"] += 1
+                state["most"] = max(state["most"], state["now"])
+            real.sleep(0.4)
+            with lock:
+                state["now"] -= 1
+            raise OSError("silent")
+
+        self.net.handshake = slow_handshake
+        self.net.get_version = lambda *a: (_ for _ in ()).throw(rpc.RpcError("silent"))
+        for ip in ips:
+            store.hear(self.db, ip, 17766, 0, int(real.time()), 0)
+            self.db.execute("UPDATE nodes SET tried_rpc = ? WHERE ip = ?", (int(real.time()), ip))
+        self.cfg.p2p_seeds = []
+        began = real.monotonic()
+        done, answered = collector.run(self.db, self.cfg, self.net)
+        took = real.monotonic() - began
+        self.assertEqual((done, answered), (12, 0))
+        self.assertEqual(sorted(ip for _, ip in starts), sorted(ips))       # each once
+        self.assertEqual(state["most"], 4)                                  # never more than four
+        self.assertLess(took, 12 * 0.4 * 0.6)                               # faster than one by one
+        gaps = [b[0] - a[0] for a, b in zip(starts, starts[1:])]
+        self.assertGreaterEqual(min(gaps), 0.04)                            # the pause holds
+        self.assertEqual(self.db.execute("SELECT count(*) FROM nodes WHERE misses = 1").fetchone()[0], 12)
+
+    def test_a_fault_in_a_check_does_not_stop_the_run(self):
+        self.net.p2p[A] = hs()
+        self.net.handshake = lambda *a: (_ for _ in ()).throw(RuntimeError("bug"))
+        import contextlib, io
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(self.run_once(), (1, 0))
+        self.assertIn("RuntimeError", err.getvalue())
+        self.assertEqual(self.node(A)["misses"], 1)
 
     def test_private_addresses_from_seeds_and_peers_are_ignored(self):
         self.cfg.p2p_seeds = ["127.0.0.1:17766", "10.0.0.5:17766", f"{A}:17766"]

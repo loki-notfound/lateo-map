@@ -1,8 +1,8 @@
 """One run of the collector.
 
 Cron starts a run every few minutes. A run takes the addresses whose check
-is due, oldest first, one at a time with a pause between them, and stops
-starting new checks when its time is up. Because every node gets its next
+is due, nodes on the map first, starts one check per pause and stops
+starting new ones when its time is up. Because every node gets its next
 check an hour (plus or minus a few minutes) after the last one, the checks
 spread over the hour by themselves.
 
@@ -12,7 +12,9 @@ it announces, or else the usual one. Peers a node shares become addresses to try
 
 import random
 import socket
+import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from . import P2P_PORT, RPC_PORT, db as store, p2p, release, rpc
@@ -167,23 +169,55 @@ def sow(db, config, probes, now, rng):
     _hear_all(db, config, later, now, rng)
 
 
-def run(db, config, probes=Probes, clock=time.time, sleep=time.sleep, rng=random):
-    """Returns (checks done, of which answered)."""
+def run(db, config, probes=Probes, clock=time.time, sleep=time.sleep, rng=random, pool=None):
+    """Returns (checks done, of which answered).
+
+    A few checks are under way side by side, because an address that does
+    not answer takes seconds to say so. The pace stays the same: a new
+    check starts at most once per `gap_seconds`, and no node is asked more
+    often. Only the calls to the network run in threads; the database is
+    touched from here alone.
+    """
     started = clock()
     sow(db, config, probes, int(started), rng)
+    own_pool = pool is None
+    if own_pool:
+        pool = ThreadPoolExecutor(max_workers=max(1, config.side_by_side))
+    under_way = {}
     done = answered = 0
-    while clock() - started < config.run_seconds:
-        now = int(clock())
-        node = store.next_due(db, now)
-        if node is None:
-            break
-        began = clock()
-        out = check(node, config, probes, now)
-        settle(db, config, node, out, int(clock()), rng)
-        done += 1
-        answered += out.answered
-        rest = config.gap_seconds - (clock() - began)
-        if rest > 0:
-            sleep(rest)
+    last_start = None
+    try:
+        while True:
+            for future in [f for f in under_way if f.done()]:
+                node = under_way.pop(future)
+                try:
+                    out = future.result()
+                except Exception as e:   # a fault of ours, not of the node
+                    print(f"check failed: {type(e).__name__}", file=sys.stderr)
+                    out = Outcome(p2p_port=node["p2p_port"], rpc_port=node["rpc_port"])
+                settle(db, config, node, out, int(clock()), rng)
+                answered += out.answered
+            now = clock()
+            wait = 0.0 if last_start is None else config.gap_seconds - (now - last_start)
+            in_time = now - started < config.run_seconds
+            if in_time and wait <= 0 and len(under_way) < max(1, config.side_by_side):
+                node = store.next_due(db, int(now))
+                if node is not None:
+                    store.claim(db, node["ip"], int(now) + config.check_every)
+                    under_way[pool.submit(check, node, config, probes, int(now))] = node
+                    last_start = now
+                    done += 1
+                    continue
+                if not under_way:
+                    break
+            elif not in_time and not under_way:
+                break
+            if under_way:
+                sleep(min(wait, 0.1) if wait > 0 else 0.1)
+            else:
+                sleep(wait)
+    finally:
+        if own_pool:
+            pool.shutdown(wait=True)
     store.prune(db, int(clock()), config.keep_checks, config.forget_after)
     return done, answered

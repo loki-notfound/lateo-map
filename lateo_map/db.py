@@ -98,6 +98,12 @@ def next_due(db, now):
                       " ORDER BY on_map DESC, next_check LIMIT 1", (now,)).fetchone()
 
 
+def claim(db, ip, until):
+    """Take an address out of the queue while its check is under way. The
+    outcome sets the real time of the next check."""
+    db.execute("UPDATE nodes SET next_check = ? WHERE ip = ?", (until, ip))
+
+
 def record_answer(db, ip, now, next_check, *, has_p2p, has_rpc, p2p_port, rpc_port,
                   height, release, pruned):
     db.execute(
