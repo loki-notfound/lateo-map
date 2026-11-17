@@ -1,0 +1,21 @@
+# local state and secrets
+.env
+.env.*
+*.pem
+*.key
+
+# collector data: addresses of nodes never enter the repository
+/data/
+*.sqlite
+*.sqlite-*
+*.db
+*.mmdb
+/geo/
+
+# generated site
+/out/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
