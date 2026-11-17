@@ -7,6 +7,9 @@ database = "/path/outside/the/webroot/map.sqlite"
 # Where the DB-IP Lite files are kept (see `geo-fetch`). Also outside the webroot.
 geo_dir = "/path/outside/the/webroot/geo"
 
+# The webroot the site is written into.
+site_dir = "/path/of/the/webroot"
+
 # Where discovery starts.
 p2p_seeds = ["192.0.2.10:17766", "192.0.2.11:17766"]
 dns_seeds = []

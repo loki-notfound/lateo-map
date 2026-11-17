@@ -1,0 +1,11 @@
+# Written by the site generator; changes here are overwritten.
+<IfModule mod_headers.c>
+  Header always set Content-Security-Policy "default-src 'none'; style-src 'self'; img-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set Referrer-Policy "no-referrer"
+  Header always set Strict-Transport-Security "max-age=31536000"
+  <FilesMatch "\.(html|json)$">
+    Header always set Cache-Control "public, max-age=120"
+  </FilesMatch>
+</IfModule>
+Options -Indexes

@@ -3,6 +3,10 @@
     python3 -m lateo_map run --config FILE
         One run, as cron starts it. A second run at the same time exits.
 
+    python3 -m lateo_map site --config FILE
+        Write the site into `site_dir` from what the database holds, without
+        contacting any node. A run does this by itself at its end.
+
     python3 -m lateo_map status --config FILE
         Counts of what the database holds. No addresses.
 
@@ -18,7 +22,7 @@ import argparse
 import fcntl
 import sys
 
-from . import P2P_PORT, RPC_PORT, collector, config, db, geo, p2p, release, rpc
+from . import P2P_PORT, RPC_PORT, collector, config, db, geo, p2p, release, rpc, site
 
 
 def check(args):
@@ -59,9 +63,11 @@ def run(args):
         database = db.connect(settings.database)
         try:
             done, answered = collector.run(database, settings)
+            print(f"{done} checks, {answered} answered")
+            if settings.site_dir:
+                print(f"site written, {site.build(database, settings)} nodes")
         finally:
             database.close()
-        print(f"{done} checks, {answered} answered")
     return 0
 
 
@@ -78,6 +84,20 @@ def status(args):
     database.close()
     for key in row.keys():
         print(f"{key.replace('_', ' '):10} {row[key]}")
+    return 0
+
+
+def write_site(args):
+    settings = config.load(args.config)
+    if not settings.site_dir:
+        print("the setting 'site_dir' is missing")
+        return 1
+    database = db.connect(settings.database)
+    try:
+        collector.locate(database, settings)
+        print(f"site written, {site.build(database, settings)} nodes")
+    finally:
+        database.close()
     return 0
 
 
@@ -102,6 +122,7 @@ def main(argv=None):
     c.set_defaults(run=check)
     for name, function, text in (("run", run, "one run of the collector"),
                                  ("status", status, "counts of what is known"),
+                                 ("site", write_site, "write the site"),
                                  ("geo-fetch", geo_fetch, "download the location data")):
         c = sub.add_parser(name, help=text)
         c.add_argument("--config", required=True)
