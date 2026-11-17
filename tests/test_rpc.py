@@ -132,12 +132,12 @@ class ReleaseTest(unittest.TestCase):
         self.assertEqual(release.from_rpc(12), "newer than v2.3.0")
         self.assertIsNone(release.from_rpc(0))
 
-    def test_p2p_lower_bounds(self):
-        self.assertEqual(release.from_p2p(11), "v2.3.0 or later")
+    def test_p2p_indication(self):
+        self.assertEqual(release.from_p2p(11), "v2.3.0")          # the newest: nothing later exists
+        self.assertEqual(release.from_p2p(12), "v2.3.0")
+        self.assertEqual(release.from_p2p(10), "v2.2.0 or later")
         self.assertEqual(release.from_p2p(8), "v2.1.0 or later")
-        self.assertEqual(release.from_p2p(12), "v2.3.0 or later")
         self.assertIsNone(release.from_p2p(0))
-
 
 if __name__ == "__main__":
     unittest.main()

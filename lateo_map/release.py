@@ -2,8 +2,9 @@
 
 A node with RPC lists every hardfork its software knows; the newest one names
 the release line. A node with P2P only shows the hardfork active at its own
-height, which gives a lower bound. Neither tells the exact build, and the map
-does not try to find it.
+height: the newest release line when that is the newest hardfork, a lower
+bound otherwise. It is an indication; neither tells the exact build, and the
+map does not try to find it.
 """
 
 # newest hardfork known to the software -> release line
@@ -35,8 +36,13 @@ def from_rpc(max_hardfork, rpc_minor=13):
 
 
 def from_p2p(top_version):
-    """Lower bound for a node that only answered the handshake, or None."""
-    if top_version > NEWEST_KNOWN:
-        top_version = NEWEST_KNOWN
+    """Release line for a node that only answered the handshake, or None.
+
+    The handshake shows the hardfork active at the node's height. On the
+    newest hardfork that names the newest release line: there is nothing
+    later it could be. On an older one the node may run that release or be
+    a newer one still synchronising, so it is a lower bound."""
+    if top_version >= NEWEST_KNOWN:
+        return _BY_KNOWN_HARDFORK[NEWEST_KNOWN]
     line = _BY_ACTIVE_HARDFORK.get(top_version)
     return f"{line} or later" if line else None

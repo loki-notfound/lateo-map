@@ -90,7 +90,7 @@ class CollectorTest(unittest.TestCase):
         self.assertEqual(self.run_once(), (1, 1))
         a = self.node(A)
         self.assertEqual((a["on_map"], a["has_p2p"], a["has_rpc"], a["release"]),
-                         (1, 1, 0, "v2.3.0 or later"))
+                         (1, 1, 0, "v2.3.0"))
         self.assertEqual(a["next_check"], 1_000_000 + HOUR)
         b, c = self.node(B), self.node(C)
         self.assertEqual((b["on_map"], b["p2p_port"], b["rpc_port"]), (0, 17766, 17767))

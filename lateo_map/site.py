@@ -355,8 +355,7 @@ def render(nodes, now):
       tried again after a day, then less and less often.</li>
       <li><strong>What is shown.</strong> The address and ports, the kind of node,
       its height, and the release line its answers point to, which is an estimate.
-      A P2P-only node shows a lower bound. A node that stays silent for 48 hours
-      leaves the map.</li>
+      A node that stays silent for 48 hours leaves the map.</li>
       <li><strong>What is not asked or shown.</strong> No administrative calls, no
       exact build, and nothing about how a node's RPC is configured. No host names.</li>
       <li><strong>Place and network.</strong> From
