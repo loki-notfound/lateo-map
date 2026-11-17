@@ -9,20 +9,21 @@ ZephyrProtocol.
 
 ## Status
 
-In preparation. This repository holds no code yet and map.lateo.dev shows no
-map yet. What follows describes what is being built.
+First version. The collector and the site generator are complete and tested;
+map.lateo.dev is being set up with them. Target: Zephyr `v2.3.0`.
 
 ## What it does
 
 - Finds nodes by asking nodes it already knows for their peers, starting from
   the network's own seeds. It only contacts addresses it learned that way; it
   never scans address ranges.
-- Checks each node with the P2P handshake every node answers and, where a node
-  offers public RPC, with `get_version`. Known nodes are checked once per hour,
-  spread evenly; addresses that never answered once per day at most.
-- Shows each node on a map and in a table: its address, the kind of node (P2P,
-  RPC or both), city and network operator, whether it answered, its height and
-  the release line it appears to run.
+- Checks each node with the P2P handshake every node answers and with
+  `get_version` on its RPC port: the one it announces, or else 17767, 443 and
+  80. Known nodes are checked once per hour, spread evenly; an address that
+  does not answer is tried again after a day, then less and less often.
+- Shows each node on a map and in a table: its address and ports, the kind of
+  node (P2P, RPC or both), city and network operator, whether it answered, its
+  height and the release line it appears to run.
 - Writes plain static files. The site runs no code per visitor and makes no
   requests to other hosts.
 
@@ -33,7 +34,56 @@ What it does not do:
 - It does not show whether a node's RPC is restricted, nor an exact build. It
   does not ask for either.
 - It does not look up host names for addresses.
-- It keeps single check results for 30 days, after that only daily totals.
+- It keeps single check results for 30 days.
+
+## Install and use
+
+Python 3.11 or later; no packages beyond the standard library.
+
+    git clone https://github.com/loki-notfound/lateo-map.git
+    cd lateo-map
+    cp config.example.toml /path/outside/the/webroot/map.toml
+
+Fill in the copy: the database path, the directory for the location data,
+the webroot and the seeds. Then:
+
+    python3 -m lateo_map geo-fetch --config /path/outside/the/webroot/map.toml
+    python3 -m lateo_map run --config /path/outside/the/webroot/map.toml
+
+`geo-fetch` downloads this month's DB-IP Lite files; repeat it once a month.
+`run` is one round: it checks the addresses that are due, for at most four
+minutes, and writes the site. Start it every five minutes, for example from
+cron; a second run at the same time exits at once:
+
+    */5 * * * * cd /path/of/lateo-map && python3 -m lateo_map run --config /path/outside/the/webroot/map.toml
+
+Other commands: `status` prints counts of what the database holds, `site`
+writes the site without contacting a node, `check HOST` asks one node by hand.
+
+If you run your own map with these files, replace the mark files and the
+site's name with your own ([TRADEMARKS.md](TRADEMARKS.md)), and the contact
+in the page text.
+
+## Configuration
+
+Settings are read from the TOML file; [config.example.toml](config.example.toml)
+shows the ones without a default.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `database` | none | Path of the SQLite file. |
+| `geo_dir` | empty | Directory of the DB-IP files; empty means no locations. |
+| `site_dir` | empty | Webroot the site is written into; empty means no site. |
+| `p2p_seeds`, `dns_seeds`, `rpc_seeds` | empty | Where discovery starts. |
+| `gap_seconds` | `1.0` | Shortest time between the starts of two checks. |
+| `side_by_side` | `4` | Checks under way at the same time. |
+| `run_seconds` | `240` | A run starts no new check after this. |
+| `check_every` | `3600` | Seconds between checks of a node on the map. |
+| `usual_rpc_ports` | `[17767, 443, 80]` | Tried on a node that announces no RPC port. |
+| `drop_after` | `172800` | A node silent this long leaves the map. |
+| `keep_checks` | `2592000` | Single check results are kept this long. |
+
+The rest is in [lateo_map/config.py](lateo_map/config.py).
 
 ## Your node on the map
 
@@ -51,6 +101,19 @@ node announces, its height and the list of peers it shares. The site visitor's
 browser talks to map.lateo.dev only. For security problems, see
 [SECURITY.md](SECURITY.md).
 
+## Development
+
+    python3 -m unittest discover -s tests -t .
+
+The tests use a pretend network, a pretend clock and small data files they
+build themselves; they contact nothing. The layout:
+
+- `lateo_map/p2p.py`, `storage.py`: the P2P handshake and its binary format.
+- `lateo_map/rpc.py`: the two RPC calls.
+- `lateo_map/collector.py`, `db.py`: one run, and what is remembered.
+- `lateo_map/geo.py`, `mmdb.py`: location and network of an address.
+- `lateo_map/site.py`, `static/`: the site.
+
 ## Contributing
 
 Issues and pull requests are welcome. Every commit on `main` is signed by the
@@ -64,5 +127,5 @@ repository's licence.
 BSD-3-Clause, see [LICENSE](LICENSE). The lateo name and marks are not covered
 by that licence; see [TRADEMARKS.md](TRADEMARKS.md).
 
-Location data, once the map shows it, comes from
-[DB-IP](https://db-ip.com) under CC BY 4.0.
+Location data comes from [DB-IP](https://db-ip.com) under CC BY 4.0; the world
+outlines are Natural Earth, public domain.
