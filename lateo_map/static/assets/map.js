@@ -275,9 +275,12 @@
   }
 
   function draw() {
-    // Map units per pixel on the screen: markers keep one size for the eye,
-    // on a wide screen and on a phone, zoomed or not.
-    var unit = view[2] / (svg.getBoundingClientRect().width || WORLD[2]);
+    // The size of markers: on a wide screen they grow with the map, as a map
+    // of a thousand units across draws them; on a screen narrower than that
+    // they keep the size of a thousand pixels, so that a phone shows them as
+    // large as a desk does. Zooming never changes their size for the eye.
+    var across = svg.getBoundingClientRect().width || WORLD[2];
+    var unit = view[2] / Math.min(across, WORLD[2]);
     var points = [];
     rows.forEach(function (row) {
       if (row.dataset.x && matches(row, false)) {

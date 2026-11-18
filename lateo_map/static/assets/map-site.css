@@ -15,14 +15,26 @@ header.site .name img { display: block; }
 
 .lt-map-canvas { max-height: 80vh; }
 
+/* The note about a pick: on the map, top left; see below for narrow screens. */
+.map-box { position: relative; }
+.map-box > .lt-map-note { z-index: 1; }
+
 /* Narrow screens: the numbers stand two by two. The map fits the screen; it
    is zoomed and moved with the fingers, so its frame does not scroll. */
 @media (max-width: 40rem) {
   .lt-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  /* the buttons in a row, so that they do not cover the low map from top to bottom */
-  .lt-map-zoom { flex-direction: row; top: .4rem; right: .4rem; }
-  .lt-map-zoom button { width: 2rem; height: 2rem; }
-  .lt-map-note { top: auto; bottom: .4rem; left: .4rem; max-width: calc(100% - .8rem); }
+  /* the buttons in a row under the map, so that they cover nothing of the low map */
+  .lt-map-zoom {
+    position: static;
+    flex-direction: row;
+    justify-content: flex-end;
+    padding: .4rem .6rem;
+    background: var(--lt-surface);
+    border-top: 1px solid var(--lt-line);
+  }
+  .lt-map-zoom[hidden] { display: none; }
+  /* no room on the low map: the note stands above the whole box */
+  .map-box > .lt-map-note { position: static; max-width: none; margin: 0 0 .5rem; }
 }
 
 /* the kind beside its mark, in a table cell */

@@ -200,9 +200,9 @@ class SiteTest(unittest.TestCase):
         self.assertRegex(page, r'<svg class="lt-map-canvas lt-map-zoomable"[^>]* aria-label="World map with \d+ Zephyr nodes"')
         self.assertIn('<div id="hover" class="lt-map-card" hidden></div>', page)
         self.assertIn('data-zoom="clear"', page)
-        # the note about a pick is written on the map, not under it
-        frame = page[page.index('class="lt-map-frame"'):page.index('class="lt-map-toolbar"')]
-        self.assertIn('<p id="tip" class="lt-map-note" role="status" hidden></p>', frame)
+        # the note about a pick stands with the map (on it, or above it on a narrow screen), not under it
+        box = page[page.index('class="map-box"'):page.index('class="lt-map-frame"')]
+        self.assertIn('<p id="tip" class="lt-map-note" role="status" hidden></p>', box)
 
     def test_address_is_kept_out_of_a_proxy_that_rewrites_addresses(self):
         # such a proxy adds a script of its own, which the policy and the map links do not want

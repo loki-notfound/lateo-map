@@ -54,7 +54,7 @@ SCENARIOS = {
         var group = [].filter.call(document.querySelectorAll('.lt-map-marker'), function (m) { return m.querySelector('.lt-map-group'); })[0];
         group.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
         var picked = { shown: shown(), note: document.getElementById('tip').textContent,
-                       noteInFrame: !!document.querySelector('.lt-map-frame #tip'),
+                       noteInFrame: !!document.querySelector('.map-box #tip'),
                        clear: !document.querySelector('[data-zoom=clear]').hidden,
                        selected: document.querySelectorAll('.lt-map-marker.is-selected').length };
         document.querySelector('.lt-map-marker.is-selected').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
@@ -87,9 +87,21 @@ SCENARIOS = {
     "stale": """play(function () { report({ stale: !document.getElementById('stale').hidden }); });""",
     "phone": """play(function () {
         var frame = document.querySelector('.lt-map-frame'), svg = document.querySelector('.lt-map-canvas');
+        var one = document.querySelector('.lt-map-marker use').getBoundingClientRect();
+        document.querySelector('.lt-map-marker').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        var note = document.getElementById('tip').getBoundingClientRect(), box = frame.getBoundingClientRect();
         report({ screen: window.innerWidth, frame: frame.clientWidth, scroll: frame.scrollWidth,
                  map: Math.round(svg.getBoundingClientRect().width),
-                 page: document.documentElement.scrollWidth, markers: markers() }); });""",
+                 page: document.documentElement.scrollWidth, markers: markers(),
+                 marker: Math.round(one.width), noteAbove: note.bottom <= box.top + 1, noteHeight: note.height }); });""",
+    "desk": """play(function () {
+        var svg = document.querySelector('.lt-map-canvas').getBoundingClientRect();
+        var one = document.querySelector('.lt-map-marker use').getBoundingClientRect();
+        document.querySelector('.lt-map-marker').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        var note = document.getElementById('tip').getBoundingClientRect();
+        var frame = document.querySelector('.lt-map-frame').getBoundingClientRect();
+        report({ map: svg.width, marker: one.width,
+                 noteOnMap: note.top >= frame.top && note.bottom <= frame.bottom && note.height > 0 }); });""",
 }
 
 
@@ -260,6 +272,15 @@ class BrowserTest(unittest.TestCase):
         self.assertLessEqual(r["map"], r["frame"])          # the map is as wide as its frame
         self.assertLessEqual(r["page"], r["screen"])        # and neither does the page
         self.assertGreater(r["markers"], 0)
+        # a P2P marker is a circle of ten in a box of sixteen: as large as on a desk a thousand wide
+        self.assertEqual(r["marker"], 10)
+        self.assertTrue(r["noteAbove"] and r["noteHeight"] > 0)   # the note stands above the box
+
+    def test_on_a_wide_screen_markers_grow_with_the_map_and_the_note_is_on_it(self):
+        r = self.play("desk", "1600,900")
+        self.assertGreater(r["map"], 1100)
+        self.assertAlmostEqual(r["marker"], 10 * r["map"] / 1000, delta=0.5)
+        self.assertTrue(r["noteOnMap"])
 
     def test_old_numbers_are_called_old(self):
         self.assertTrue(self.play("stale")["stale"])

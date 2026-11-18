@@ -436,6 +436,8 @@ def render(nodes, now, hidden=None, site_url=""):
   <div class="lt-stat-grid">{tiles}</div>
 
   <section id="map" aria-label="Map">
+    <div class="map-box">
+    <p id="tip" class="lt-map-note" role="status" hidden></p>
     <div class="lt-map-frame">
       <svg class="lt-map-canvas lt-map-zoomable" viewBox="{VIEW}" data-detail="{asset("world-map-50m.svg")}" role="group" aria-label="World map with {len(everything)} Zephyr nodes">
         {SYMBOLS}
@@ -453,7 +455,6 @@ def render(nodes, now, hidden=None, site_url=""):
         <button type="button" data-zoom="reset" aria-label="Show the whole world" title="Whole world">{ICON % "M3 6V3h3M10 3h3v3M13 10v3h-3M6 13H3v-3"}</button>
         <button type="button" data-zoom="clear" aria-label="Let go of the picked nodes" title="Let go of the picked nodes" hidden>{ICON % "M4 4l8 8M12 4l-8 8"}</button>
       </div>
-      <p id="tip" class="lt-map-note" role="status" hidden></p>
       <div id="hover" class="lt-map-card" hidden></div>
       <div class="lt-map-toolbar">
         <ul class="lt-map-legend" id="legend" aria-label="Legend">
@@ -463,6 +464,7 @@ def render(nodes, now, hidden=None, site_url=""):
         </ul>
         <span class="lt-muted lt-compact">Places are approximate.<span id="legend-hint" hidden> Click a kind to show or hide it. Zoom with the buttons, a double click, or Ctrl and the wheel.</span></span>
       </div>
+    </div>
     </div>
   </section>
 
