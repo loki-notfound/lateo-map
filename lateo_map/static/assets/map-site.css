@@ -35,6 +35,11 @@ header.site .name img { display: block; }
 }
 /* several nodes at one spot: neutral, so that colour keeps meaning the kind */
 .mk-cluster { fill: var(--lt-fg); stroke: var(--lt-surface); stroke-width: 2; }
+.mk-ring { fill: none; stroke-width: 3.5; vector-effect: non-scaling-stroke; pointer-events: none; }
+.mk-ring-p2p { stroke: var(--kind-p2p); }
+.mk-ring-rpc { stroke: var(--kind-rpc); }
+.mk-ring-both { stroke: var(--kind-both); }
+.mk-ring-private { stroke: var(--kind-private); }
 .mk-cluster-text {
   fill: var(--lt-bg);
   font: 700 11px/1 var(--lt-font-mono);
@@ -153,6 +158,7 @@ header.site .name img { display: block; }
 }
 .filter[aria-pressed="false"] .kind-mark { opacity: .35; }
 .controls button:focus-visible,
+.search select:focus-visible,
 .search input:focus-visible {
   outline: var(--lt-focus-width) solid var(--lt-focus);
   outline-offset: var(--lt-focus-offset);
@@ -228,3 +234,14 @@ header.site .name img { display: block; }
 .zoom button[hidden] { display: none; }
 .zoom svg { display: block; pointer-events: none; }
 section#map { margin-top: 1.25rem; }
+
+.search select {
+  min-height: 36px;
+  padding: .35rem .6rem;
+  border: 1px solid var(--lt-line-strong);
+  border-radius: var(--lt-radius-md);
+  background: var(--lt-surface);
+  color: var(--lt-fg);
+  font: inherit;
+  font-size: .875rem;
+}

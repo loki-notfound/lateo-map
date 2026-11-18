@@ -166,8 +166,11 @@ class SiteTest(unittest.TestCase):
         add(self.db, "8.8.8.1", release="v2.3.0")
         add(self.db, "8.8.8.2", release="v2.2.0", rpc=True)
         page = self.page()
-        for value in ("v2.3.0", "v2.2.0"):
-            self.assertIn(f'data-filter="release" data-value="{value}"', page)
+        # the version is a choice of its own, not a switch among the kinds
+        self.assertIn('<select id="version"><option value="">All</option>'
+                      '<option value="v2.3.0">v2.3.0</option><option value="v2.2.0">v2.2.0</option></select>', page)
+        self.assertNotIn('data-filter="release"', page)
+        self.assertIn('<p id="nothing" class="lt-muted" hidden>', page)
         for kind in ("p2p", "rpc", "both"):
             self.assertIn(f'data-filter="kind" data-value="{kind}"', page)
         self.assertNotIn('data-value="private"', page)
@@ -188,6 +191,9 @@ class SiteTest(unittest.TestCase):
         page = self.page()
         self.assertNotIn(">Map</h2>", page)
         self.assertIn('<section id="map" aria-label="Map">', page)
+        # no title element on the map or in it besides the markers': a browser shows one as a tooltip
+        self.assertNotIn("map-svg-title", page)
+        self.assertRegex(page, r'<svg class="lt-map-canvas"[^>]* aria-label="World map with \d+ Zephyr nodes"')
         self.assertIn('<div id="hover" class="map-tip" hidden></div>', page)
         self.assertIn('data-zoom="clear"', page)
         # the note about a pick is written on the map, not under it

@@ -18,8 +18,8 @@ First version, running on map.lateo.dev. Target: Zephyr `v2.3.0`.
   the network's own seeds. It only contacts addresses it learned that way; it
   never scans address ranges.
 - Checks each node with the P2P handshake every node answers and with
-  `get_version` on its RPC port: the one it announces, or else 17767, 443 and
-  80. Known nodes are checked once per hour, spread evenly; an address that
+  `get_version` on its RPC port: the one it announces, or else 17767. Known
+  nodes are checked once per hour, spread evenly; an address that
   does not answer is tried again after a day, then less and less often.
 - Shows each node on a map and in a table: its address and ports, the kind of
   node (P2P, RPC or both), city and network operator, whether it answered, its
@@ -86,7 +86,7 @@ shows the ones without a default.
 | `side_by_side` | `4` | Checks under way at the same time. |
 | `run_seconds` | `240` | A run starts no new check after this. |
 | `check_every` | `3600` | Seconds between checks of a node on the map. |
-| `usual_rpc_ports` | `[17767, 443, 80]` | Tried on a node that announces no RPC port. |
+| `usual_rpc_ports` | `[17767]` | Tried on a node that announces no RPC port; 443 and 80 can be added. |
 | `drop_after` | `172800` | A node silent this long leaves the map. |
 | `keep_checks` | `2592000` | Single check results are kept this long. |
 

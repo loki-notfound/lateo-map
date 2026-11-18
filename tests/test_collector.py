@@ -185,6 +185,17 @@ class CollectorTest(unittest.TestCase):
             for address in (B, C, "8.8.4.4"):
                 self.assertNotIn(address, row["value"])
 
+    def test_an_address_not_tried_yet_is_not_called_private(self):
+        self.net.p2p[A] = hs(peers=[p2p.Peer(B, 17766)])      # B is known from a peer list, untried
+        self.cfg.own_nodes = ["10.0.0.5:17769"]
+        self.net.inbound[("10.0.0.5", 17769)] = {B: 900, C: 900}
+        self.run_once()
+        self.assertEqual(store.get_meta(self.db, "unreachable"), "1")
+        # once B was tried and stayed silent it counts
+        self.now = self.node(B)["next_check"]
+        self.run_once()
+        self.assertEqual(store.get_meta(self.db, "unreachable"), "2")
+
     def test_no_own_node_or_no_answer_means_no_count(self):
         self.run_once()
         self.assertIsNone(store.get_meta(self.db, "unreachable"))
@@ -328,7 +339,7 @@ class CollectorTest(unittest.TestCase):
             self.run_once()
             self.now += HOUR
         tries = [c for c in self.net.calls if c[0] == "version"]
-        self.assertEqual(tries, [("version", A, 17767), ("version", A, 443), ("version", A, 80)] * 2)
+        self.assertEqual(tries, [("version", A, 17767)] * 2)
         self.assertEqual(self.node(A)["has_rpc"], 0)
 
     def test_port_from_hearsay_then_the_usual_one(self):
@@ -336,10 +347,10 @@ class CollectorTest(unittest.TestCase):
         store.hear(self.db, A, 17766, 8888, 1_000_000, 1_000_000)
         self.run_once()
         self.assertEqual([c for c in self.net.calls if c[0] == "version"],
-                         [("version", A, 8888), ("version", A, 17767), ("version", A, 443),
-                          ("version", A, 80)])
+                         [("version", A, 8888), ("version", A, 17767)])
 
-    def test_rpc_behind_a_web_server_is_found_on_443(self):
+    def test_rpc_behind_a_web_server_is_found_on_443_when_that_port_is_added(self):
+        self.cfg.usual_rpc_ports = [17767, 443, 80]
         self.net.p2p[A] = hs()
         self.net.rpc[(A, 443)] = rpc.Version(13, 11, 905)
         self.net.public[(A, 443)] = []

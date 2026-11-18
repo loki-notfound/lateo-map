@@ -71,10 +71,11 @@ def check(node, config, probes, now):
         out.pruned = hs.pruned
         out.heard += [(peer.host, peer.port, peer.rpc_port) for peer in hs.peers]
     # Which RPC port, in order: the one the node announces itself, the one
-    # that worked last time, the one a peer gave, the usual ones (the
-    # daemon's own, and 443 and 80 for a node behind a web server). A node
-    # can offer RPC without announcing it. Ports that are not announced and
-    # did not work last time are tried once a day, not every hour.
+    # that worked last time, the one a peer gave, the usual one (the
+    # daemon's own; `usual_rpc_ports` can add 443 and 80 for nodes behind a
+    # web server). A node can offer RPC without announcing it. Ports that
+    # are not announced and did not work last time are tried once a day,
+    # not every hour.
     announced = hs.rpc_port if hs is not None else 0
     out.rpc_port = announced or node["rpc_port"]
     sure = bool(announced) or bool(node["has_rpc"] and node["rpc_port"])
@@ -247,7 +248,10 @@ def count_unreachable(db, config, probes, now, data=None):
             pass
     if not answered:
         return None
-    on_map = {row["ip"] for row in db.execute("SELECT ip FROM nodes WHERE on_map = 1")}
+    # Not private: a node on the map, and an address the collector knows from
+    # a peer list but has not tried yet. That one may well be public.
+    on_map = {row["ip"] for row in db.execute(
+        "SELECT ip FROM nodes WHERE on_map = 1 OR last_check IS NULL")}
     own_data = data is None
     try:
         data = data or geo.open_dir(config.geo_dir)

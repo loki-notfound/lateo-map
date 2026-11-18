@@ -40,10 +40,13 @@
   if (legendHint) legendHint.hidden = false;
   var buttons = Array.prototype.slice.call(document.querySelectorAll(".filter"));
 
-  // What is switched off, per filter. Everything is on at first except the
-  // private nodes: those a visitor switches on.
-  function defaults() { return { kind: { "private": true }, release: {} }; }
+  // The kinds that are switched off. Every kind is on at first except the
+  // private nodes: those a visitor switches on. The version is a separate
+  // choice (all, or one), so that switching kinds off never hides a version.
+  function defaults() { return { kind: { "private": true } }; }
   var off = defaults();
+  var version = document.getElementById("version");
+  var nothing = document.getElementById("nothing");
   var picked = null;                    // ids of the rows picked on the map
   var WORLD = svg.getAttribute("viewBox").split(" ").map(Number);   // x, y, width, height
   var view = WORLD.slice();
@@ -56,7 +59,8 @@
 
   function matches(row, withPicked) {
     var words = search ? search.value.trim().toLowerCase() : "";
-    return !off.kind[row.dataset.kind] && !off.release[row.dataset.release] &&
+    return !off.kind[row.dataset.kind] &&
+           (!version || !version.value || version.value === row.dataset.release) &&
            (!withPicked || !picked || picked.indexOf(row.id) !== -1) &&
            (!words || row.textContent.toLowerCase().indexOf(words) !== -1);
   }
@@ -80,7 +84,9 @@
       if (ok) count += 1;
     });
     if (shown) shown.textContent = count === rows.length ? "" : count + " of " + rows.length + " shown";
-    if (reset) reset.hidden = isDefault() && !picked && !(search && search.value.trim());
+    if (reset) reset.hidden = isDefault() && !picked && !(search && search.value.trim()) &&
+                              !(version && version.value);
+    if (nothing) nothing.hidden = count > 0;
     showPicked();
     draw();
   }
@@ -96,10 +102,12 @@
     });
   });
   if (search) search.addEventListener("input", function () { picked = null; apply(); });
+  if (version) version.addEventListener("change", function () { picked = null; apply(); });
   if (reset) reset.addEventListener("click", function () {
     off = defaults();
     picked = null;
     if (search) search.value = "";
+    if (version) version.value = "";
     showSwitches();
     apply();
   });
@@ -152,6 +160,7 @@
   }
 
   function size(count) { return count === 1 ? 8 : 8 + Math.min(count, 9) * 0.5; }
+  function ring(group) { return group.rows.length > 1 ? 4 : 0; }
 
   function groupsOf(points, unit) {
     var groups = [], near = 13 * unit;
@@ -171,7 +180,7 @@
       for (var a = 0; a < groups.length && !merged; a += 1) {
         for (var b = a + 1; b < groups.length; b += 1) {
           var A = groups[a], B = groups[b];
-          var reach = (size(A.rows.length) + size(B.rows.length) - 1) * unit;
+          var reach = (size(A.rows.length) + size(B.rows.length) + ring(A) + ring(B) - 1) * unit;
           if ((A.x - B.x) * (A.x - B.x) + (A.y - B.y) * (A.y - B.y) < reach * reach) {
             var na = A.rows.length, nb = B.rows.length;
             A.x = (A.x * na + B.x * nb) / (na + nb);
@@ -291,7 +300,7 @@
       // tooltip beside the card. The label is there for screen readers.
       var link = el("a", { "class": "lt-map-marker", href: "#" + first.id, "aria-label": label });
       link.appendChild(el("circle", { "class": "mk-hit", cx: group.x, cy: group.y,
-                                       r: (size(count) + 5) * unit }));
+                                       r: (size(count) + 7) * unit }));
       if (count === 1) {
         var kind = first.dataset.kind;
         link.appendChild(el("use", {
@@ -302,6 +311,21 @@
       } else {
         link.appendChild(el("circle", { "class": "mk-cluster", cx: group.x, cy: group.y,
                                          r: size(count) * unit }));
+        // A ring around the group shows which kinds are in it, each kind an
+        // arc as long as its share.
+        var shares = {}, start = 0;
+        group.rows.forEach(function (row) { shares[row.dataset.kind] = (shares[row.dataset.kind] || 0) + 1; });
+        ["p2p", "rpc", "both", "private"].forEach(function (kind) {
+          if (!shares[kind]) return;
+          var part = shares[kind] / count * 100;
+          link.appendChild(el("circle", {
+            "class": "mk-ring mk-ring-" + kind, cx: group.x, cy: group.y,
+            r: (size(count) + 2.5) * unit, pathLength: 100,
+            "stroke-dasharray": part + " " + (100 - part), "stroke-dashoffset": -start,
+            transform: "rotate(-90 " + group.x + " " + group.y + ")"
+          }));
+          start += part;
+        });
         var text = el("text", { "class": "mk-cluster-text", x: group.x, y: group.y });
         text.style.fontSize = (11 * unit) + "px";
         text.textContent = count;
@@ -456,6 +480,20 @@
     return parts.join("|");
   }
 
+  // The versions on offer may change between two rounds; no reload for that.
+  function takeVersions(doc) {
+    var fresh = doc.getElementById("version");
+    if (!fresh || !version) return;
+    var chosen = version.value;
+    while (version.firstChild) version.removeChild(version.firstChild);
+    Array.prototype.forEach.call(fresh.options, function (option) {
+      version.appendChild(document.importNode(option, true));
+    });
+    version.value = chosen;
+    if (version.value !== chosen) version.value = "";
+  }
+
+
   function takeOver(doc) {
     if (signature(doc) !== signature(document)) { location.reload(); return; }
     [".lt-stat-grid", ".lead", "#nodes-caption"].forEach(function (selector) {
@@ -466,6 +504,7 @@
         old.appendChild(document.importNode(node, true));
       });
     });
+    takeVersions(doc);
     var freshBody = doc.querySelector("#node-table tbody");
     if (!freshBody) return;
     while (body.firstChild) body.removeChild(body.firstChild);

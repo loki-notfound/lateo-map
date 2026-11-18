@@ -323,9 +323,7 @@ def render(nodes, now, hidden=None):
         f'aria-pressed="{"false" if k == "private" else "true"}">{_mark(k)}{e(KINDS[k])}</button>'
         for k in kinds)
     versions = sorted({n["release"] for n in everything if n["release"]}, reverse=True)
-    version_filters = "".join(
-        f'<button type="button" class="filter" data-filter="release" data-value="{e(v)}" '
-        f'aria-pressed="true">{e(v)}</button>' for v in versions)
+    version_choice = "".join(f'<option value="{e(v)}">{e(v)}</option>' for v in versions)
     caption = f'{c["nodes"]} public nodes, {c["answering"]} answering'
     if hidden is not None:
         caption += f' · {len(hidden)} private nodes, hidden until switched on'
@@ -379,8 +377,7 @@ def render(nodes, now, hidden=None):
 
   <section id="map" aria-label="Map">
     <div class="lt-map-frame">
-      <svg class="lt-map-canvas" viewBox="{VIEW}" role="group" aria-labelledby="map-svg-title">
-        <title id="map-svg-title">World map with {len(everything)} Zephyr nodes</title>
+      <svg class="lt-map-canvas" viewBox="{VIEW}" role="group" aria-label="World map with {len(everything)} Zephyr nodes">
         {SYMBOLS}
         <rect class="lt-map-water" width="{WIDTH}" height="{HEIGHT}"/>
         <path class="lt-map-graticule" d="{paths["graticule"]}"/>
@@ -413,11 +410,12 @@ def render(nodes, now, hidden=None):
     <h2 id="nodes-title">Nodes</h2>
     <div class="controls" hidden>
       <div class="filters" role="group" aria-label="Kinds shown">{filters}</div>
-      <div class="filters" role="group" aria-label="Versions shown">{version_filters}</div>
+      <label class="search">Version <select id="version"><option value="">All</option>{version_choice}</select></label>
       <label class="search">Search <input type="search" id="q" autocomplete="off" spellcheck="false" placeholder="address, place or network"></label>
       <button type="button" id="reset" hidden>Back to the start</button>
       <span id="shown" class="lt-muted" role="status"></span>
     </div>
+    <p id="nothing" class="lt-muted" hidden>No node is shown: every kind is switched off, or nothing matches the version or the search.</p>
     <div class="lt-table-scroll" tabindex="0" role="region" aria-labelledby="nodes-caption">
       <table class="lt-table" id="node-table">
         <caption id="nodes-caption">{e(caption)}</caption>
