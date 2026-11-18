@@ -6,6 +6,7 @@ with the same nodes, and the stylesheets, icons and script copied from
 page loads nothing from other hosts and carries no inline style or script.
 """
 
+import hashlib
 import html
 import json
 import os
@@ -36,6 +37,15 @@ HEADERS = (
     "default-src 'none'; style-src 'self'; img-src 'self'; script-src 'self'; "
     "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 )
+
+
+def asset(name):
+    """The address of a file under assets/, with a mark of its content. A
+    changed file gets a new address, so that neither a browser nor a cache in
+    front of the site goes on serving the old one beside a new page."""
+    with open(os.path.join(STATIC, "assets", name), "rb") as f:
+        mark = hashlib.sha256(f.read()).hexdigest()[:10]
+    return f"/assets/{name}?v={mark}"
 
 
 def e(value):
@@ -267,14 +277,10 @@ def counts(nodes):
     }
 
 
-HIDDEN_NOTE = """<li><strong>Public and private nodes.</strong> A public node accepts
-      connections from the network; those are the nodes this map finds. A private
-      node, behind a firewall or a home router, connects out but accepts no
-      connections, so it is in nobody's peer list. The private nodes this page
-      knows are peers connected to nodes the operator of this map runs; switch
-      them on in the legend to see them. Of a private node the place, the network
-      and the height are kept; its address is not stored or shown. There are more
-      than these: the operator's nodes see only a part of the network.</li>
+HIDDEN_NOTE = """<li><strong>Private nodes</strong> connect out but accept no connections, for
+      example behind a home router. They are seen as peers of this site's own
+      nodes, so there are more than shown here. Their place, network and height
+      are kept; their address is not.</li>
       """
 
 
@@ -296,13 +302,14 @@ def render(nodes, now, hidden=None):
     groups.sort(key=lambda g: -len(g["nodes"]))
     markers = "\n".join(_marker(g) for g in groups)
     rows = "\n".join(_row(n) for n in everything)
+    numbers = [("Public nodes", c["nodes"])]
+    if hidden is not None:
+        numbers.append(("Private nodes", len(hidden)))
+    numbers += [("P2P only", c["p2p"]), ("RPC only", c["rpc"]), ("P2P and RPC", c["both"]),
+                ("Countries", c["countries"])]
     tiles = "".join(
         f'<div class="lt-stat-tile"><span class="lt-stat-label">{label}</span>'
-        f'<span class="lt-stat-value">{value}</span></div>'
-        for label, value in (("Public nodes", c["nodes"]), ("P2P only", c["p2p"]),
-                             ("RPC only", c["rpc"]), ("P2P and RPC", c["both"]),
-                             ("Countries", c["countries"]))
-        + ((("Private nodes", len(hidden)),) if hidden is not None else ()))
+        f'<span class="lt-stat-value">{value}</span></div>' for label, value in numbers)
     # the script turns these into switches for what the map shows
     legend = "".join(
         f'<li data-filter="kind" data-value="{k}"><span class="lt-map-legend-item">'
@@ -315,35 +322,42 @@ def render(nodes, now, hidden=None):
     version_filters = "".join(
         f'<button type="button" class="filter" data-filter="release" data-value="{e(v)}" '
         f'aria-pressed="true">{e(v)}</button>' for v in versions)
-    caption = f'{c["nodes"]} public nodes, {c["answering"]} answering now'
+    caption = f'{c["nodes"]} public nodes, {c["answering"]} answering'
     if hidden is not None:
-        caption += f'; {len(hidden)} private nodes (switched off at first)'
+        caption += f' · {len(hidden)} private nodes, hidden until switched on'
     generated = stamp(now)
     hidden_note = HIDDEN_NOTE if hidden is not None else ""
+    if hidden is not None:
+        lead = ("Public Zephyr nodes found on the network, and private nodes seen "
+                "connecting to it. Checked once per hour.")
+        summary = "World map and directory of Zephyr nodes: public nodes found on the network and private nodes seen connecting to it."
+    else:
+        lead = "Public Zephyr nodes found on the network. Checked once per hour."
+        summary = "World map and directory of the public Zephyr nodes found on the network."
     return f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>map.lateo.dev · Zephyr nodes on the public network</title>
-<meta name="description" content="A world map and directory of the Zephyr nodes that can be found on the public network.">
-<link rel="stylesheet" href="/assets/tokens.css">
-<link rel="stylesheet" href="/assets/site.css">
-<link rel="stylesheet" href="/assets/data.css">
-<link rel="stylesheet" href="/assets/map.css">
-<link rel="stylesheet" href="/assets/map-site.css">
-<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
-<link rel="icon" href="/assets/favicon-32.png" sizes="32x32" type="image/png">
-<link rel="apple-touch-icon" href="/assets/apple-touch-icon-180.png">
-<script src="/assets/map.js" defer></script>
+<title>map.lateo.dev · Zephyr node map</title>
+<meta name="description" content="{summary}">
+<link rel="stylesheet" href="{asset("tokens.css")}">
+<link rel="stylesheet" href="{asset("site.css")}">
+<link rel="stylesheet" href="{asset("data.css")}">
+<link rel="stylesheet" href="{asset("map.css")}">
+<link rel="stylesheet" href="{asset("map-site.css")}">
+<link rel="icon" href="{asset("favicon.svg")}" type="image/svg+xml">
+<link rel="icon" href="{asset("favicon-32.png")}" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="{asset("apple-touch-icon-180.png")}">
+<script src="{asset("map.js")}" defer></script>
 </head>
 <body>
 <a class="lt-skip-link" href="#main">Skip to main content</a>
 <header class="site">
   <div class="wrap">
     <a class="name" href="/"><picture>
-      <source srcset="/assets/lockup-host-map-reversed.svg" media="(prefers-color-scheme: dark)">
-      <img src="/assets/lockup-host-map.svg" width="165" height="28" alt="map.lateo.dev">
+      <source srcset="{asset("lockup-host-map-reversed.svg")}" media="(prefers-color-scheme: dark)">
+      <img src="{asset("lockup-host-map.svg")}" width="165" height="28" alt="map.lateo.dev">
     </picture></a>
     <nav>
       <a href="#map">Map</a>
@@ -354,9 +368,8 @@ def render(nodes, now, hidden=None):
 </header>
 
 <main id="main" class="wrap-main" tabindex="-1">
-  <h1>Zephyr nodes on the public network</h1>
-  <p class="lead">Every public Zephyr node this site could find and reach, checked
-  once per hour. Last update {e(generated)}.</p>
+  <h1>Zephyr node map</h1>
+  <p class="lead">{lead} Last update {e(generated)}.</p>
 
   <div class="lt-stat-grid">{tiles}</div>
 
@@ -385,7 +398,7 @@ def render(nodes, now, hidden=None):
           <li><span class="lt-map-legend-item">{_mark("p2p", " is-offline")}Hollow: not answering now</span></li>
           <li><span class="lt-map-legend-item"><span class="cluster-swatch" aria-hidden="true">3</span>Several nodes close together</span></li>
         </ul>
-        <span class="lt-muted lt-compact">A point is where the address block is registered, city level at best.<span id="legend-hint" hidden> Click a kind to switch it on or off. Zoom with the buttons, a double click, or Ctrl and the wheel.</span></span>
+        <span class="lt-muted lt-compact">Places are approximate.<span id="legend-hint" hidden> Click a kind to show or hide it. Zoom with the buttons, a double click, or Ctrl and the wheel.</span></span>
       </div>
     </div>
     <p id="tip" class="tip" role="status" hidden></p>
@@ -427,30 +440,22 @@ def render(nodes, now, hidden=None):
   <section id="method" aria-labelledby="method-title">
     <h2 id="method-title">How this map is made</h2>
     <ul>
-      <li><strong>Finding nodes.</strong> A node tells its peers about other nodes.
-      The collector starts at the network's seed nodes, asks each node it reaches
-      for the peers it shares, and tries those in turn. It only contacts addresses
-      it learned this way and never scans address ranges.</li>
-      <li><strong>Checking a node.</strong> Once per hour: the handshake every node
-      answers on its P2P port, and <code>get_version</code> on its RPC port, the one
-      it announces or else 17767, 443 and 80. An address that does not answer is
-      tried again after a day, then less and less often.</li>
-      <li><strong>What is shown.</strong> The address and ports, the kind of node,
-      its height, and the version its answers point to, which is an indication.
-      A node that stays silent for 48 hours leaves the map.</li>
-      <li><strong>What is not asked or shown.</strong> No administrative calls to
-      anyone's node but the operator's own, no exact build, and nothing about how
-      a node's RPC is configured. No host names.</li>
-{hidden_note}      <li><strong>Place and network.</strong> From
-      <a href="https://db-ip.com">IP Geolocation by DB-IP</a> (CC BY 4.0). It
-      describes address blocks, so a point is often a provider's data centre.</li>
+      <li><strong>Public nodes</strong> accept connections. They are found through
+      the peer lists that nodes share, starting at the seed nodes; only addresses
+      learned that way are contacted. Each is checked once per hour with the P2P
+      handshake and <code>get_version</code>. A node that is silent for 48 hours
+      leaves the map.</li>
+{hidden_note}      <li><strong>Version</strong> is an indication, read from the hardforks a node
+      knows. Exact builds, host names and how a node's RPC is set up are not
+      asked for or shown.</li>
+      <li><strong>Place and network</strong> come from
+      <a href="https://db-ip.com">IP Geolocation by DB-IP</a> and describe address
+      blocks: a point is often a provider's data centre.</li>
     </ul>
-    <h3>Your node on the map</h3>
-    <p>A node that accepts connections is announced by its peers, and that is how
-    it gets here. The collector's RPC requests carry a user agent that names
-    map.lateo.dev. Questions about an entry: open an
+    <p>Questions about an entry: open an
     <a href="https://github.com/loki-notfound/lateo-map/issues">issue</a> or write
-    to <a href="mailto:loki-notfound@proton.me">loki-notfound@proton.me</a>.</p>
+    to <a href="mailto:loki-notfound@proton.me">loki-notfound@proton.me</a>. The
+    collector's requests name map.lateo.dev in their user agent.</p>
   </section>
 </main>
 

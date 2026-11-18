@@ -127,6 +127,12 @@ header.site .name img { display: block; }
   font-size: .875rem;
   cursor: pointer;
 }
+/* a switch that is on: marked as chosen */
+.filter[aria-pressed="true"] {
+  border-color: var(--lt-accent);
+  box-shadow: inset 0 0 0 1px var(--lt-accent);
+  font-weight: 600;
+}
 /* a switch that is off: faded and struck through */
 .filter[aria-pressed="false"] {
   color: var(--lt-muted);

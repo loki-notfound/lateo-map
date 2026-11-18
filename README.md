@@ -1,16 +1,16 @@
 # lateo-map
 
 Source of [map.lateo.dev](https://map.lateo.dev), a world map and directory of
-the Zephyr nodes that can be found on the public network: the collector that
-finds and checks the nodes, and the generator of the static site.
+Zephyr nodes: the public nodes found on the network, and private nodes seen
+connecting to it. It holds the collector that finds and checks the nodes, and
+the generator of the static site.
 
 Independent open-source project around Zephyr. Not affiliated with
 ZephyrProtocol.
 
 ## Status
 
-First version. The collector and the site generator are complete and tested;
-map.lateo.dev is being set up with them. Target: Zephyr `v2.3.0`.
+First version, running on map.lateo.dev. Target: Zephyr `v2.3.0`.
 
 ## What it does
 

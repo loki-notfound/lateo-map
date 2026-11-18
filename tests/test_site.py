@@ -88,7 +88,8 @@ class SiteTest(unittest.TestCase):
         add(self.db, "8.8.8.1")
         page = self.page()
         self.assertNotRegex(page, r"<style|\sstyle=|\son[a-z]+=|javascript:")
-        self.assertEqual(re.findall(r"<script[^>]*>", page), ['<script src="/assets/map.js" defer>'])
+        self.assertRegex(page, r'<script src="/assets/map\.js\?v=[0-9a-f]{10}" defer></script>')
+        self.assertEqual(len(re.findall(r"<script", page)), 1)
         for url in re.findall(r'(?:src|srcset|href)="([^"]+)"', page):
             if url.startswith(("/", "#")):
                 continue
@@ -135,7 +136,10 @@ class SiteTest(unittest.TestCase):
         self.hide([entry, dict(entry, city="Zwolle", lat=52.5, lon=6.1, height=None)])
         page = self.page()
         self.assertIn('Private nodes</span><span class="lt-stat-value">2<', page)
-        self.assertIn("Public and private nodes", page)
+        labels = re.findall(r'lt-stat-label">([^<]+)<', page)
+        self.assertEqual(labels[:3], ["Public nodes", "Private nodes", "P2P only"])
+        self.assertIn("<strong>Private nodes</strong> connect out", page)
+        self.assertIn("and private nodes seen connecting to it", page)
         self.assertEqual(page.count('data-kind="private"'), 2)
         # off until a visitor switches them on: rows hidden, no marker, the switch not pressed
         self.assertIn('<tr id="h-1" hidden data-kind="private" data-status="online" data-release="v2.3.0"', page)
@@ -144,7 +148,7 @@ class SiteTest(unittest.TestCase):
         self.assertIn('data-filter="kind" data-value="p2p" aria-pressed="true"', page)
         self.assertIn("not shown", page)
         self.assertIn('data-filter="kind" data-value="private"', page)
-        self.assertIn("1 public nodes, 1 answering now; 2 private nodes (switched off", page)
+        self.assertIn("1 public nodes, 1 answering · 2 private nodes, hidden until switched on", page)
         with open(os.path.join(self.dir.name, "nodes.json"), encoding="utf-8") as f:
             data = json.load(f)
         self.assertEqual(data["counts"]["private"], 2)
@@ -160,19 +164,32 @@ class SiteTest(unittest.TestCase):
 
     def test_filters_for_kind_and_version(self):
         add(self.db, "8.8.8.1", release="v2.3.0")
-        add(self.db, "8.8.8.2", release="v2.2.0 or later", rpc=True)
+        add(self.db, "8.8.8.2", release="v2.2.0", rpc=True)
         page = self.page()
-        for value in ("v2.3.0", "v2.2.0 or later"):
+        for value in ("v2.3.0", "v2.2.0"):
             self.assertIn(f'data-filter="release" data-value="{value}"', page)
         for kind in ("p2p", "rpc", "both"):
             self.assertIn(f'data-filter="kind" data-value="{kind}"', page)
         self.assertNotIn('data-value="private"', page)
-        self.assertIn('data-release="v2.2.0 or later"', page)
+        self.assertIn('data-release="v2.2.0"', page)
         self.assertRegex(page, r'<tr id="n-8-8-8-1"[^>]* data-x="522\.2" data-y="111\.1"')
+
+    def test_asset_links_change_when_a_file_changes(self):
+        add(self.db, "8.8.8.1")
+        page = self.page()
+        links = re.findall(r'(?:href|src|srcset)="(/assets/[^"]+)"', page)
+        self.assertGreaterEqual(len(links), 9)
+        for link in links:
+            self.assertRegex(link, r"^/assets/[a-z0-9.-]+\?v=[0-9a-f]{10}$")
+        self.assertEqual(site.asset("map.js"), site.asset("map.js"))
+        self.assertNotEqual(site.asset("map.js").split("=")[1], site.asset("site.css").split("=")[1])
 
     def test_empty_map(self):
         page = self.page()
-        self.assertIn("0 public nodes, 0 answering now", page)
+        self.assertIn("0 public nodes, 0 answering", page)
+        self.assertIn("Public Zephyr nodes found on the network. Checked once per hour.", page)
+        self.assertNotIn("Private", page)
+        self.assertNotIn("private nodes", page)
 
     def test_projection(self):
         self.assertEqual(site.project(90, -180), (0.0, 0.0))
