@@ -459,7 +459,7 @@ def render(nodes, now, hidden=None):
     </ul>
     <p>Questions about an entry: open an
     <a href="https://github.com/loki-notfound/lateo-map/issues">issue</a> or write
-    to <a href="mailto:loki-notfound@proton.me">loki-notfound@proton.me</a>. The
+    to <!--email_off--><a href="mailto:loki-notfound@proton.me">loki-notfound@proton.me</a><!--/email_off-->. The
     collector's requests name map.lateo.dev in their user agent.</p>
   </section>
 </main>

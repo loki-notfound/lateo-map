@@ -191,6 +191,10 @@ class SiteTest(unittest.TestCase):
         self.assertIn('<div id="hover" class="map-tip" hidden></div>', page)
         self.assertIn('data-zoom="clear"', page)
 
+    def test_address_is_kept_out_of_a_proxy_that_rewrites_addresses(self):
+        # such a proxy adds a script of its own, which the policy and the map links do not want
+        self.assertIn('<!--email_off--><a href="mailto:', self.page())
+
     def test_empty_map(self):
         page = self.page()
         self.assertIn("0 public nodes, 0 answering", page)

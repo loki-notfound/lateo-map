@@ -8,7 +8,10 @@
   var table = document.getElementById("node-table");
   var svg = document.querySelector(".lt-map-canvas");
   var layer = document.getElementById("markers");
-  if (!table || !svg || !layer) return;
+  // Without these the page is not one this script knows; it then stays as
+  // the server wrote it. Everything else on the page is optional below, so
+  // that a page written by an older or newer generator still gets its map.
+  if (!table || !svg || !layer || !table.tBodies[0] || !table.tHead) return;
 
   var body = table.tBodies[0];
   var rows = Array.prototype.slice.call(body.rows);
@@ -46,13 +49,13 @@
   var view = WORLD.slice();
   var MAX_ZOOM = 16;
 
-  controls.hidden = false;
+  if (controls) controls.hidden = false;
   if (zoomBox) zoomBox.hidden = false;
 
   // ---- the table ----------------------------------------------------------
 
   function matches(row, withPicked) {
-    var words = search.value.trim().toLowerCase();
+    var words = search ? search.value.trim().toLowerCase() : "";
     return !off.kind[row.dataset.kind] && !off.release[row.dataset.release] &&
            (!withPicked || !picked || picked.indexOf(row.id) !== -1) &&
            (!words || row.textContent.toLowerCase().indexOf(words) !== -1);
@@ -64,7 +67,7 @@
 
   function showSwitches() {
     buttons.forEach(function (button) {
-      var isOff = off[button.dataset.filter][button.dataset.value];
+      var isOff = (off[button.dataset.filter] || {})[button.dataset.value];
       button.setAttribute("aria-pressed", isOff ? "false" : "true");
     });
   }
@@ -76,8 +79,8 @@
       row.hidden = !ok;
       if (ok) count += 1;
     });
-    shown.textContent = count === rows.length ? "" : count + " of " + rows.length + " shown";
-    reset.hidden = isDefault() && !picked && !search.value.trim();
+    if (shown) shown.textContent = count === rows.length ? "" : count + " of " + rows.length + " shown";
+    if (reset) reset.hidden = isDefault() && !picked && !(search && search.value.trim());
     showPicked();
     draw();
   }
@@ -85,17 +88,18 @@
   buttons.forEach(function (button) {
     button.addEventListener("click", function () {
       var set = off[button.dataset.filter], value = button.dataset.value;
+      if (!set) return;
       if (set[value]) delete set[value]; else set[value] = true;
       picked = null;
       showSwitches();
       apply();
     });
   });
-  search.addEventListener("input", function () { picked = null; apply(); });
-  reset.addEventListener("click", function () {
+  if (search) search.addEventListener("input", function () { picked = null; apply(); });
+  if (reset) reset.addEventListener("click", function () {
     off = defaults();
     picked = null;
-    search.value = "";
+    if (search) search.value = "";
     showSwitches();
     apply();
   });
@@ -227,6 +231,7 @@
   }
 
   function showCard(group, label, x, y) {
+    if (!card || !frame) return;
     fill(group, label);
     card.hidden = false;
     var box = frame.getBoundingClientRect();
@@ -237,13 +242,14 @@
     card.style.top = Math.max(8, top) + "px";
   }
 
-  function hideCard() { card.hidden = true; }
+  function hideCard() { if (card) card.hidden = true; }
 
   // The line under the map says what is picked, with the way to the table.
   function showPicked() {
+    if (clear) clear.hidden = !picked;
+    if (!tip) return;
     while (tip.firstChild) tip.removeChild(tip.firstChild);
     tip.hidden = !picked;
-    if (clear) clear.hidden = !picked;
     if (!picked) return;
     var count = picked.length;
     tip.appendChild(document.createTextNode(
