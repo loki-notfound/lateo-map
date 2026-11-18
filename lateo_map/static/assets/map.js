@@ -287,10 +287,9 @@
         var names = Object.keys(places).sort();
         label = count + " nodes · " + names[0] + (names.length > 1 ? " and nearby" : "");
       }
+      // No <title> inside: the browser would show it as a second, small
+      // tooltip beside the card. The label is there for screen readers.
       var link = el("a", { "class": "lt-map-marker", href: "#" + first.id, "aria-label": label });
-      var title = el("title");
-      title.textContent = label;
-      link.appendChild(title);
       link.appendChild(el("circle", { "class": "mk-hit", cx: group.x, cy: group.y,
                                        r: (size(count) + 5) * unit }));
       if (count === 1) {
