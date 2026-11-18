@@ -190,6 +190,9 @@ class SiteTest(unittest.TestCase):
         self.assertIn('<section id="map" aria-label="Map">', page)
         self.assertIn('<div id="hover" class="map-tip" hidden></div>', page)
         self.assertIn('data-zoom="clear"', page)
+        # the note about a pick is written on the map, not under it
+        frame = page[page.index('class="lt-map-frame"'):page.index('class="lt-map-toolbar"')]
+        self.assertIn('<p id="tip" class="map-pick" role="status" hidden></p>', frame)
 
     def test_address_is_kept_out_of_a_proxy_that_rewrites_addresses(self):
         # such a proxy adds a script of its own, which the policy and the map links do not want

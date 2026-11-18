@@ -244,7 +244,7 @@
 
   function hideCard() { if (card) card.hidden = true; }
 
-  // The line under the map says what is picked, with the way to the table.
+  // A note on the map says what is picked, with the way to the table.
   function showPicked() {
     if (clear) clear.hidden = !picked;
     if (!tip) return;
@@ -258,7 +258,7 @@
     link.href = "#nodes";
     link.textContent = count === 1 ? "See it in the table" : "See them in the table";
     tip.appendChild(link);
-    tip.appendChild(document.createTextNode(". Click the marker again to let go."));
+    tip.appendChild(document.createTextNode("."));
   }
 
   function same(a, b) {

@@ -396,6 +396,7 @@ def render(nodes, now, hidden=None):
         <button type="button" data-zoom="reset" aria-label="Show the whole world" title="Whole world">{ICON % "M3 6V3h3M10 3h3v3M13 10v3h-3M6 13H3v-3"}</button>
         <button type="button" data-zoom="clear" aria-label="Let go of the picked nodes" title="Let go of the picked nodes" hidden>{ICON % "M4 4l8 8M12 4l-8 8"}</button>
       </div>
+      <p id="tip" class="map-pick" role="status" hidden></p>
       <div id="hover" class="map-tip" hidden></div>
       <div class="lt-map-toolbar">
         <ul class="lt-map-legend" id="legend" aria-label="Legend">
@@ -406,7 +407,6 @@ def render(nodes, now, hidden=None):
         <span class="lt-muted lt-compact">Places are approximate.<span id="legend-hint" hidden> Click a kind to show or hide it. Zoom with the buttons, a double click, or Ctrl and the wheel.</span></span>
       </div>
     </div>
-    <p id="tip" class="tip" role="status" hidden></p>
   </section>
 
   <section id="nodes" aria-labelledby="nodes-title">

@@ -102,10 +102,19 @@ header.site .name img { display: block; }
 .kind { display: inline-flex; align-items: center; gap: .4rem; white-space: nowrap; }
 .kind-mark { flex: none; overflow: visible; }
 
-.tip {
-  margin: .5rem 0 0;
+/* what is picked, written on the map itself so that it is in view */
+.map-pick {
+  position: absolute;
+  top: .6rem;
+  left: .6rem;
+  max-width: calc(100% - 4.5rem);
+  margin: 0;
+  padding: .35rem .7rem;
+  border: 1px solid var(--lt-line-strong);
+  border-radius: var(--lt-radius-md);
+  background: var(--lt-surface);
+  box-shadow: var(--lt-shadow-sm);
   font-size: .875rem;
-  color: var(--lt-muted);
 }
 
 .controls {
