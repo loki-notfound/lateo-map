@@ -98,25 +98,24 @@ def load_nodes(db, config):
     return nodes
 
 
-def load_hidden(db, now, fresh=2 * 3600):
+def load_hidden(db, config, now, fresh=2 * 3600):
     """The private nodes (they run but cannot be reached from outside; see
-    own.py), as the collector last counted them: place and height, no address. None when
-    there is no count or it is old."""
+    own.py) as the collector knows them: place, network and height, no
+    address. None when they are not counted or the count is old."""
     at = store.get_meta(db, "unreachable_at")
-    raw = store.get_meta(db, "unreachable_nodes")
-    if at is None or raw is None or now - float(at) > fresh:
+    if at is None or now - float(at) > fresh:
         return None
     hidden = []
-    for index, entry in enumerate(json.loads(raw), 1):
-        height = entry.get("height")
+    rows = store.private_nodes(db, float(at) - config.private_hold)
+    for index, row in enumerate(rows, 1):
         hidden.append({
             "ip": None, "id": f"h-{index}", "kind": "private", "p2p_port": None, "rpc_port": None,
-            "status": "online", "height": height,
-            "release": release.from_height(height) if height else None, "pruned": False,
-            "country": entry.get("country"), "country_name": entry.get("country_name"),
-            "region": None, "city": entry.get("city"), "lat": entry.get("lat"),
-            "lon": entry.get("lon"), "asn": entry.get("asn"), "network": entry.get("network"),
-            "first_seen": None, "last_seen": int(float(at)),
+            "status": "online", "height": row["height"],
+            "release": release.from_height(row["height"]) if row["height"] else None,
+            "pruned": False, "country": row["country"], "country_name": row["country_name"],
+            "region": None, "city": row["city"], "lat": row["lat"], "lon": row["lon"],
+            "asn": row["asn"], "network": row["network"],
+            "first_seen": None, "last_seen": row["last_seen"],
         })
     return hidden
 
@@ -282,9 +281,10 @@ def counts(nodes):
 
 
 HIDDEN_NOTE = """<li><strong>Private nodes</strong> connect out but accept no connections, for
-      example behind a home router. They are seen as peers of this site's own
-      nodes, so there are more than shown here. Their place, network and height
-      are kept; their address is not.</li>
+      example behind a home router. They are seen as peers that stay connected to
+      this site's own nodes, so there are more than shown here. Their place,
+      network and height are kept; their address is not, only a short-lived
+      fingerprint that counts each node once.</li>
       """
 
 
@@ -328,6 +328,7 @@ def render(nodes, now, hidden=None):
     if hidden is not None:
         caption += f' · {len(hidden)} private nodes, hidden until switched on'
     generated = stamp(now)
+    iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))
     hidden_note = HIDDEN_NOTE if hidden is not None else ""
     if hidden is not None:
         lead = ("Public Zephyr nodes found on the network, and private nodes seen "
@@ -371,7 +372,8 @@ def render(nodes, now, hidden=None):
 
 <main id="main" class="wrap-main" tabindex="-1">
   <h1>Zephyr node map</h1>
-  <p class="lead">{lead} Last update {e(generated)}.</p>
+  <p class="lead">{lead} Last update <time id="updated" datetime="{iso}" data-epoch="{int(now)}">{e(generated)}</time>.</p>
+  <p id="stale" class="lt-callout lt-callout-warning" role="status" hidden>These numbers are older than they should be: the map has not been updated for a while.</p>
 
   <div class="lt-stat-grid">{tiles}</div>
 
@@ -516,7 +518,7 @@ def build(db, config, now=None):
         os.chmod(os.path.join(out, name + ".new"), 0o644)
         os.replace(os.path.join(out, name + ".new"), os.path.join(out, name))
     nodes = load_nodes(db, config)
-    hidden = load_hidden(db, now)
+    hidden = load_hidden(db, config, now)
     _write(os.path.join(out, "nodes.json"), json.dumps(data(nodes, now, hidden), indent=1) + "\n")
     _write(os.path.join(out, "index.html"), render(nodes, now, hidden))
     return len(nodes)

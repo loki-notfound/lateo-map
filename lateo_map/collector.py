@@ -10,8 +10,9 @@ A check is the P2P handshake and get_version on the node's RPC port: the one
 it announces, or else the usual ones. Peers a node shares become addresses to try later.
 """
 
-import json
+import hmac
 import random
+import secrets
 import socket
 import sys
 import time
@@ -132,7 +133,12 @@ def settle(db, config, node, out, now, rng):
         else:
             # off the map: tried again after a day, then less and less often
             tries = 0 if node["on_map"] else node["misses"]
-            nxt = now + config.retry_after[min(tries, len(config.retry_after) - 1)]
+            if node["first_ok"] is None and tries >= len(config.retry_after):
+                # it never answered: most likely an old entry of a peer list,
+                # perhaps somebody else's address by now. Left alone for long.
+                nxt = now + config.retry_dead_after
+            else:
+                nxt = now + config.retry_after[min(tries, len(config.retry_after) - 1)]
             store.record_miss(db, ip, now, nxt, False, tries + 1)
     if out.tried_rpc:
         store.mark_tried_rpc(db, ip, now)
@@ -226,58 +232,91 @@ def run(db, config, probes=Probes, clock=time.time, sleep=time.sleep, rng=random
             pool.shutdown(wait=True)
     store.prune(db, int(clock()), config.keep_checks, config.forget_after)
     locate(db, config)
-    count_unreachable(db, config, probes, int(clock()))
+    private = count_unreachable(db, config, probes, int(clock()))
+    note_totals(db, int(clock()), private)
     return done, answered
 
 
+def _private_key(db, now):
+    """The key of the day for the fingerprints of private nodes. A new day
+    brings a new key, and the fingerprints made with the old one are dropped."""
+    day = time.strftime("%Y-%m-%d", time.gmtime(now))
+    if store.get_meta(db, "private_key_day") != day:
+        store.set_meta(db, "private_key", secrets.token_hex(32))
+        store.set_meta(db, "private_key_day", day)
+        db.execute("DELETE FROM private_nodes")
+    return bytes.fromhex(store.get_meta(db, "private_key"))
+
+
 def count_unreachable(db, config, probes, now, data=None):
-    """Find the inbound peers of the operator's own nodes that are not on
-    the map: nodes that run but cannot be reached from outside. Per node its
-    place, network operator and height are kept, never its address. Returns their number, or
-    None when no own node answered."""
+    """Find the private nodes: peers that stay connected to the operator's
+    own nodes, follow the chain, and are not on the map. Per node its place,
+    network operator and height are kept, and a keyed fingerprint to count it
+    once; never its address. Returns their number, or None when no own node
+    answered."""
     if not config.own_nodes:
         return None
     seen, answered = {}, 0
     for entry in config.own_nodes:
         host, port = split_endpoint(entry, 17767)
         try:
-            for ip, height in probes.inbound_peers(host, port, config.rpc_timeout).items():
+            peers = probes.inbound_peers(host, port, config.rpc_timeout,
+                                         config.private_min_seconds, config.private_max_behind)
+            for ip, height in peers.items():
                 seen[ip] = max(seen.get(ip, 0), height)
             answered += 1
         except rpc.RpcError:
             pass
     if not answered:
         return None
-    # Not private: a node on the map, and an address the collector knows from
-    # a peer list but has not tried yet. That one may well be public.
-    on_map = {row["ip"] for row in db.execute(
-        "SELECT ip FROM nodes WHERE on_map = 1 OR last_check IS NULL")}
+    key = _private_key(db, now)
+    public = {row["ip"] for row in db.execute("SELECT ip FROM nodes WHERE on_map = 1")}
+    # an address the collector knows from a peer list but has not tried yet
+    # may well be public: it is left out until a check found it silent
+    untried = {row["ip"] for row in db.execute("SELECT ip FROM nodes WHERE last_check IS NULL")}
     own_data = data is None
     try:
         data = data or geo.open_dir(config.geo_dir)
     except (OSError, mmdb.FormatError):
         data = None
-    entries = []
     try:
-        for ip in sorted(set(seen) - on_map):
+        for ip in sorted(seen):
+            tag = hmac.new(key, ip.encode(), "sha256").hexdigest()[:32]
+            if ip in public:
+                store.forget_private(db, tag)
+                continue
+            if ip in untried:
+                continue
             try:
                 place = data.place(ip) if data is not None else geo.Place()
             except (ValueError, mmdb.FormatError):
                 place = geo.Place()
-            entries.append({"country": place.country, "country_name": place.country_name,
-                            "city": place.city, "lat": place.lat, "lon": place.lon,
-                            "asn": place.asn, "network": place.network,
-                            "height": seen[ip] or None})
+            store.see_private(db, tag, now, seen[ip] or None, place)
     finally:
         if own_data and data is not None:
             data.close()
-    # ordered by place, so that the order says nothing about the addresses
-    entries.sort(key=lambda x: (x["country_name"] or "~", x["city"] or "~", x["height"] or 0))
-    store.set_meta(db, "unreachable_nodes", json.dumps(entries))
-    store.set_meta(db, "unreachable", len(entries))
+    db.execute("DELETE FROM private_nodes WHERE last_seen < ?", (now - config.private_hold,))
     store.set_meta(db, "unreachable_observers", answered)
     store.set_meta(db, "unreachable_at", now)
-    return len(entries)
+    return db.execute("SELECT count(*) FROM private_nodes").fetchone()[0]
+
+
+def note_totals(db, now, private):
+    """Keep today's numbers, for a history later: per kind, country and
+    version the most public nodes seen at one moment of the day, and the most
+    private nodes."""
+    day = time.strftime("%Y-%m-%d", time.gmtime(now))
+    rows = db.execute("SELECT has_p2p, has_rpc, country, release FROM nodes WHERE on_map = 1").fetchall()
+    totals = {}
+    for row in rows:
+        kind = "both" if row["has_p2p"] and row["has_rpc"] else "rpc" if row["has_rpc"] else "p2p"
+        for metric, name in (("kind", kind), ("country", row["country"]), ("release", row["release"])):
+            totals[(metric, name or "")] = totals.get((metric, name or ""), 0) + 1
+    totals[("kind", "public")] = len(rows)
+    if private is not None:
+        totals[("kind", "private")] = private
+    for (metric, name), value in totals.items():
+        store.note_daily(db, day, metric, name, value)
 
 
 def locate(db, config, data=None):

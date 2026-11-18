@@ -517,6 +517,7 @@
     }
     sortRows();
     apply();
+    checkAge();
   }
 
   function refresh() {
@@ -529,6 +530,18 @@
       })
       .catch(function () { /* the next round tries again */ });
   }
+
+  // When the site itself stops being written, say so instead of showing old
+  // numbers as if they were current.
+  var stale = document.getElementById("stale");
+  function checkAge() {
+    var updated = document.getElementById("updated");
+    if (!stale || !updated) return;
+    var age = Date.now() / 1000 - Number(updated.dataset.epoch);
+    stale.hidden = !(age > 20 * 60);
+  }
+  setInterval(checkAge, 60 * 1000);
+  checkAge();
 
   setInterval(refresh, REFRESH);
   document.addEventListener("visibilitychange", refresh);

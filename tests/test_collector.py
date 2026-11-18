@@ -38,7 +38,7 @@ class Net:
             raise rpc.RpcError("refused")
         return self.public[(host, port)]
 
-    def inbound_peers(self, host, port, timeout):
+    def inbound_peers(self, host, port, timeout, min_seconds=0, max_behind=0):
         self.calls.append(("inbound", host, port))
         if (host, port) not in self.inbound:
             raise rpc.RpcError("refused")
@@ -165,45 +165,117 @@ class CollectorTest(unittest.TestCase):
         self.run_once()
         self.assertEqual(self.net.calls[:2], [("public", "node.example", 443), ("p2p", A, 17766)])
 
-    def test_unreachable_nodes_are_counted_on_own_nodes_only(self):
+    def private(self):
+        return self.db.execute("SELECT * FROM private_nodes ORDER BY height").fetchall()
+
+    def test_private_nodes_are_found_on_own_nodes_only_and_without_their_address(self):
         self.net.p2p[A] = hs()
         self.cfg.own_nodes = ["10.0.0.5:17769", "10.0.0.6:17769"]
         self.net.inbound[("10.0.0.5", 17769)] = {A: 900, B: 900, C: 880}    # A is on the map
-        self.net.inbound[("10.0.0.6", 17769)] = {C: 890, "8.8.4.4": 0}      # C is seen by both
+        self.net.inbound[("10.0.0.6", 17769)] = {C: 890, "8.8.4.4": 870}    # C is seen by both
         self.run_once()
-        self.assertEqual(store.get_meta(self.db, "unreachable"), "3")
+        self.assertEqual([r["height"] for r in self.private()], [870, 890, 900])
         self.assertEqual(store.get_meta(self.db, "unreachable_observers"), "2")
-        import json
-        kept = json.loads(store.get_meta(self.db, "unreachable_nodes"))
-        self.assertEqual(sorted(str(k["height"]) for k in kept), ["890", "900", "None"])
-        self.assertEqual(set(kept[0]), {"country", "country_name", "city", "lat", "lon", "asn", "network", "height"})
         # the admin call went to the own nodes and to nobody else
         self.assertEqual({c[1] for c in self.net.calls if c[0] == "inbound"}, {"10.0.0.5", "10.0.0.6"})
-        # and no address of an unreachable node was kept
+        # and no address of a private node was kept anywhere
         self.assertEqual([r["ip"] for r in self.db.execute("SELECT ip FROM nodes")], [A])
-        for row in self.db.execute("SELECT value FROM meta"):
-            for address in (B, C, "8.8.4.4"):
-                self.assertNotIn(address, row["value"])
+        dump = "\n".join(self.db.iterdump())
+        for address in (B, C, "8.8.4.4"):
+            self.assertNotIn(address, dump)
+
+    def test_a_private_node_is_counted_once_and_held_for_an_hour(self):
+        self.net.p2p[A] = hs()
+        self.cfg.own_nodes = ["10.0.0.5:17769"]
+        self.net.inbound[("10.0.0.5", 17769)] = {B: 900}
+        self.run_once()
+        self.now += 300
+        self.net.inbound[("10.0.0.5", 17769)] = {B: 902, C: 902}
+        self.run_once()
+        self.assertEqual([r["height"] for r in self.private()], [902, 902])     # B once, not twice
+        self.net.inbound[("10.0.0.5", 17769)] = {}
+        self.now += 1800
+        self.run_once()
+        self.assertEqual(len(self.private()), 2)       # gone from the own node, still held
+        self.now += 3600
+        self.run_once()
+        self.assertEqual(len(self.private()), 0)
+
+    def test_a_private_node_that_turns_out_public_is_dropped(self):
+        self.cfg.own_nodes = ["10.0.0.5:17769"]
+        self.cfg.p2p_seeds = [f"{A}:17766"]
+        self.net.inbound[("10.0.0.5", 17769)] = {A: 900}
+        self.run_once()                               # A was tried and is silent: private
+        self.assertEqual(len(self.private()), 1)
+        self.net.p2p[A] = hs()
+        self.now = self.node(A)["next_check"]
+        self.run_once()                               # now it answers: public
+        self.assertEqual(len(self.private()), 0)
+
+    def test_fingerprints_get_a_new_key_every_day(self):
+        self.net.p2p[A] = hs()
+        self.cfg.own_nodes = ["10.0.0.5:17769"]
+        self.net.inbound[("10.0.0.5", 17769)] = {B: 900}
+        self.run_once()
+        first_key, first_tag = store.get_meta(self.db, "private_key"), self.private()[0]["tag"]
+        self.now += 300
+        self.run_once()
+        self.assertEqual(self.private()[0]["tag"], first_tag)
+        self.now += 86400
+        self.run_once()
+        self.assertNotEqual(store.get_meta(self.db, "private_key"), first_key)
+        self.assertNotEqual(self.private()[0]["tag"], first_tag)
+        self.assertEqual(len(self.private()), 1)
 
     def test_an_address_not_tried_yet_is_not_called_private(self):
         self.net.p2p[A] = hs(peers=[p2p.Peer(B, 17766)])      # B is known from a peer list, untried
         self.cfg.own_nodes = ["10.0.0.5:17769"]
         self.net.inbound[("10.0.0.5", 17769)] = {B: 900, C: 900}
         self.run_once()
-        self.assertEqual(store.get_meta(self.db, "unreachable"), "1")
+        self.assertEqual(len(self.private()), 1)
         # once B was tried and stayed silent it counts
         self.now = self.node(B)["next_check"]
         self.run_once()
-        self.assertEqual(store.get_meta(self.db, "unreachable"), "2")
+        self.assertEqual(len(self.private()), 2)
 
     def test_no_own_node_or_no_answer_means_no_count(self):
         self.run_once()
-        self.assertIsNone(store.get_meta(self.db, "unreachable"))
+        self.assertIsNone(store.get_meta(self.db, "unreachable_at"))
         self.assertEqual([c for c in self.net.calls if c[0] == "inbound"], [])
         self.cfg.own_nodes = ["10.0.0.5:17769"]
         self.now += HOUR
         self.run_once()
-        self.assertIsNone(store.get_meta(self.db, "unreachable"))
+        self.assertIsNone(store.get_meta(self.db, "unreachable_at"))
+
+    def test_daily_totals_keep_the_highest_number_of_the_day(self):
+        self.cfg.p2p_seeds = [f"{A}:17766", f"{B}:17766"]
+        self.net.p2p[A] = hs()
+        self.net.p2p[B] = hs(rpc_port=17767)
+        self.net.rpc[(B, 17767)] = rpc.Version(13, 11, 905)
+        self.net.public[(B, 17767)] = []
+        self.run_once()
+        def totals():
+            return {(r["metric"], r["key"]): r["value"] for r in self.db.execute("SELECT * FROM daily")}
+        self.assertEqual(totals()[("kind", "public")], 2)
+        self.assertEqual(totals()[("kind", "p2p")], 1)
+        self.assertEqual(totals()[("kind", "both")], 1)
+        self.assertEqual(totals()[("release", "v2.3.0")], 2)
+        self.db.execute("UPDATE nodes SET on_map = 0 WHERE ip = ?", (B,))
+        self.now += 600
+        self.run_once()
+        self.assertEqual(totals()[("kind", "public")], 2)          # the day's highest stays
+        self.assertEqual(len({r["day"] for r in self.db.execute("SELECT day FROM daily")}), 1)
+
+    def test_an_address_that_never_answered_is_left_alone_after_a_few_tries(self):
+        self.run_once()
+        waits = []
+        for _ in range(6):
+            before = self.now
+            self.now = self.node(A)["next_check"]
+            waits.append(round((self.now - before) / DAY))
+            store.hear(self.db, A, 17766, 0, int(self.now), 0)     # peers keep naming it
+            self.run_once()
+        self.assertEqual(waits, [1, 2, 4, 7, 30, 30])
 
     def test_never_calls_anything_else(self):
         self.assertEqual(sorted(n for n in vars(collector.Probes) if not n.startswith("_")),

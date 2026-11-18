@@ -1,0 +1,29 @@
+name: tests
+
+# Pull requests and pushes to main: the unit tests and the page in a browser.
+# Nothing is contacted but localhost.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Versions
+        run: |
+          python3 --version
+          node --version
+          google-chrome --version || chromium --version || echo "no browser: the browser tests are skipped"
+      - name: Script syntax
+        run: node --check lateo_map/static/assets/map.js
+      - name: Tests
+        run: python3 -W error -m unittest discover -s tests -t . -v

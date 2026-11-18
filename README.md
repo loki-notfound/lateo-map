@@ -20,7 +20,8 @@ First version, running on map.lateo.dev. Target: Zephyr `v2.3.0`.
 - Checks each node with the P2P handshake every node answers and with
   `get_version` on its RPC port: the one it announces, or else 17767. Known
   nodes are checked once per hour, spread evenly; an address that
-  does not answer is tried again after a day, then less and less often.
+  does not answer is tried again after a day, then less and less often; one
+  that never answered is left alone for a month after four tries.
 - Shows each node on a map and in a table: its address and ports, the kind of
   node (P2P, RPC or both), city and network operator, whether it answered, its
   height and the release line it appears to run.
@@ -34,13 +35,15 @@ What it does not do:
   when a node leaves them open, and it never changes anything on a node. The
   one administrative call it knows, `get_connections`, goes only to nodes of
   the operator listed as `own_nodes`: it finds the private nodes among the
-  peers there, the ones that run but cannot be reached from outside. Of
-  those the map shows the place, the network and the height; their addresses
-  are not stored or shown.
+  peers that stay connected there, the ones that run but cannot be reached
+  from outside. Of those the map shows the place, the network and the
+  height. Their addresses are not shown or kept; a keyed fingerprint with a
+  key of the day counts each node once ([lateo_map/own.py](lateo_map/own.py)).
 - It does not show whether a node's RPC is restricted, nor an exact build. It
   does not ask for either.
 - It does not look up host names for addresses.
-- It keeps single check results for 30 days.
+- It keeps single check results for 30 days, and beside them the highest
+  numbers of each day (per kind, country and version).
 
 ## Install and use
 
@@ -61,7 +64,10 @@ the webroot and the seeds. Then:
 minutes, and writes the site. Start it every five minutes, for example from
 cron; a second run at the same time exits at once:
 
-    */5 * * * * cd /path/of/lateo-map && python3 -m lateo_map run --config /path/outside/the/webroot/map.toml
+    */5 * * * * cd /path/of/lateo-map && python3 -m lateo_map run --config /path/outside/the/webroot/map.toml >> /path/outside/the/webroot/run.log 2>&1
+    30 3 * * * tail -n 2000 /path/outside/the/webroot/run.log > /path/outside/the/webroot/run.log.new && mv /path/outside/the/webroot/run.log.new /path/outside/the/webroot/run.log
+
+The second line keeps the log short.
 
 Other commands: `status` prints counts of what the database holds, `site`
 writes the site without contacting a node, `check HOST` asks one node by hand.
@@ -113,10 +119,16 @@ browser talks to map.lateo.dev only. For security problems, see
     python3 -m unittest discover -s tests -t .
 
 The tests use a pretend network, a pretend clock and small data files they
-build themselves; they contact nothing. The layout:
+build themselves; they contact nothing but localhost. `tests/test_browser.py`
+loads the page in Chromium or Chrome when one is installed (it is skipped
+otherwise) and plays a visitor: switches, version, pick, zoom, hover, the
+refresh of an open page. The same tests run for every pull request.
+
+The layout:
 
 - `lateo_map/p2p.py`, `storage.py`: the P2P handshake and its binary format.
-- `lateo_map/rpc.py`: the two RPC calls. `own.py`: the count on your own nodes.
+- `lateo_map/rpc.py`: the two RPC calls. `own.py`: the private nodes, seen on
+  your own nodes.
 - `lateo_map/collector.py`, `db.py`: one run, and what is remembered.
 - `lateo_map/geo.py`, `mmdb.py`: location and network of an address.
 - `lateo_map/site.py`, `static/`: the site.

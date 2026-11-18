@@ -30,6 +30,7 @@ class Config:
     check_every: int = HOUR         # a node that is on the map
     check_jitter: int = 300
     retry_after: list = field(default_factory=lambda: [DAY, 2 * DAY, 4 * DAY, 7 * DAY])
+    retry_dead_after: int = 30 * DAY  # an address that never answered, once those tries are used up
     new_within: int = 6 * HOUR      # first check of a new address, spread over this
     ask_peers_every: int = 6 * HOUR  # get_public_nodes per node, and the seeds
     try_usual_rpc_every: int = DAY  # the usual RPC port on a node that announces none
@@ -40,6 +41,10 @@ class Config:
     forget_after: int = 30 * DAY    # never answers and no peer mentions it: deleted
     keep_checks: int = 30 * DAY
     max_addresses: int = 20000      # no new addresses beyond this
+    # private nodes (see own.py)
+    private_min_seconds: int = 180  # connected at least this long to an own node
+    private_max_behind: int = 20    # and at most this many blocks behind
+    private_hold: int = HOUR        # counted this long after it was last seen
 
 
 def load(path):

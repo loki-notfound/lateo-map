@@ -177,6 +177,18 @@ INSERT INTO nodes (ip, first_heard, last_heard, next_check) VALUES ('8.8.8.8', 1
 
 
 class MigrationTest(Files):
+    def test_schema_two_loses_the_old_private_count(self):
+        path = os.path.join(self.dir.name, "two.sqlite")
+        database = store.connect(path)
+        store.set_meta(database, "schema", "2")
+        store.set_meta(database, "unreachable_nodes", "[]")
+        database.close()
+        database = store.connect(path)
+        self.addCleanup(database.close)
+        self.assertEqual(store.get_meta(database, "schema"), store.SCHEMA_VERSION)
+        self.assertIsNone(store.get_meta(database, "unreachable_nodes"))
+        self.assertEqual(database.execute("SELECT count(*) FROM private_nodes").fetchone()[0], 0)
+
     def test_schema_one_is_brought_up_to_date(self):
         import sqlite3
         path = os.path.join(self.dir.name, "old.sqlite")

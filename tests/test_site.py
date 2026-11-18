@@ -124,8 +124,12 @@ class SiteTest(unittest.TestCase):
                 self.assertGreaterEqual(distance + 1, site.radius(len(a["nodes"])) + site.radius(len(b["nodes"])))
 
     def hide(self, entries, at=NOW - 600):
-        store.set_meta(self.db, "unreachable_nodes", json.dumps(entries))
-        store.set_meta(self.db, "unreachable", len(entries))
+        from lateo_map import geo
+        self.db.execute("DELETE FROM private_nodes")
+        for index, entry in enumerate(entries):
+            place = geo.Place(**{k: entry.get(k) for k in
+                                 ("country", "country_name", "city", "lat", "lon", "asn", "network")})
+            store.see_private(self.db, f"tag{index}", at, entry.get("height"), place)
         store.set_meta(self.db, "unreachable_at", at)
 
     def test_private_nodes_are_listed_without_an_address_and_off_at_first(self):

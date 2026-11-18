@@ -66,14 +66,19 @@ class RpcTest(unittest.TestCase):
     def test_inbound_peers_of_an_own_node(self):
         from lateo_map import own
         self.serve("/json_rpc", {"result": {"connections": [
-            {"incoming": True, "host": "8.8.8.8", "port": "40000", "height": 900},
-            {"incoming": True, "host": "8.8.8.8", "port": "40001", "height": "x"},
-            {"incoming": False, "host": "9.9.9.9", "port": "17766"},
-            {"incoming": True, "host": "192.168.1.4"},
-            {"incoming": True, "host": 5},
+            {"incoming": True, "host": "8.8.8.8", "height": 900, "live_time": 4000},
+            {"incoming": True, "host": "8.8.8.8", "height": "x", "live_time": 4000},
+            {"incoming": False, "host": "9.9.9.9", "height": 905, "live_time": 4000},   # outgoing
+            {"incoming": True, "host": "8.8.4.4", "height": 904, "live_time": 20},      # just arrived
+            {"incoming": True, "host": "1.1.1.1", "height": 0, "live_time": 4000},      # a crawler
+            {"incoming": True, "host": "1.0.0.1", "height": 500, "live_time": 4000},    # far behind
+            {"incoming": True, "host": "192.168.1.4", "height": 904, "live_time": 4000},
+            {"incoming": True, "host": 5, "height": 904, "live_time": 4000},
             "junk",
         ]}})
         self.assertEqual(own.inbound_peers("127.0.0.1", self.port), {"8.8.8.8": 900})
+        self.assertEqual(own.inbound_peers("127.0.0.1", self.port, min_seconds=10, max_behind=1000),
+                         {"8.8.8.8": 900, "8.8.4.4": 904, "1.0.0.1": 500})
         self.assertEqual(json.loads(Handler.seen[0][2])["method"], "get_connections")
         self.serve("/json_rpc", {"error": {"code": -32601}})
         with self.assertRaises(rpc.RpcError):

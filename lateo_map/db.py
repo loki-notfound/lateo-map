@@ -48,8 +48,27 @@ CREATE TABLE IF NOT EXISTS checks (
     height  INTEGER
 );
 CREATE INDEX IF NOT EXISTS checks_at ON checks (at);
+CREATE TABLE IF NOT EXISTS private_nodes (     -- see own.py; no address in here
+    tag          TEXT PRIMARY KEY,             -- keyed fingerprint of the address
+    last_seen    INTEGER NOT NULL,
+    height       INTEGER,
+    country      TEXT,
+    country_name TEXT,
+    city         TEXT,
+    lat          REAL,
+    lon          REAL,
+    asn          INTEGER,
+    network      TEXT
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS daily (             -- the highest count of each day
+    day    TEXT NOT NULL,                      -- YYYY-MM-DD, UTC
+    metric TEXT NOT NULL,                      -- kind, country, release, private
+    key    TEXT NOT NULL,
+    value  INTEGER NOT NULL,
+    PRIMARY KEY (day, metric, key)
+) WITHOUT ROWID;
 """
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "3"
 
 # from one schema version to the next
 MIGRATIONS = {
@@ -63,6 +82,11 @@ MIGRATIONS = {
         ALTER TABLE nodes ADD COLUMN asn INTEGER;
         ALTER TABLE nodes ADD COLUMN network TEXT;
         ALTER TABLE nodes ADD COLUMN located INTEGER NOT NULL DEFAULT 0;
+    """,
+    # the tables private_nodes and daily are new and made by SCHEMA; the count
+    # of private nodes moves out of meta
+    "2": """
+        DELETE FROM meta WHERE key IN ('unreachable_nodes', 'unreachable');
     """,
 }
 
@@ -179,3 +203,31 @@ def set_place(db, ip, place, version):
                " lon = ?, asn = ?, network = ?, located = ? WHERE ip = ?",
                (place.country, place.country_name, place.region, place.city, place.lat,
                 place.lon, place.asn, place.network, version, ip))
+
+
+def see_private(db, tag, now, height, place):
+    db.execute(
+        "INSERT INTO private_nodes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (tag) DO UPDATE SET"
+        " last_seen = excluded.last_seen, height = excluded.height, country = excluded.country,"
+        " country_name = excluded.country_name, city = excluded.city, lat = excluded.lat,"
+        " lon = excluded.lon, asn = excluded.asn, network = excluded.network",
+        (tag, now, height, place.country, place.country_name, place.city, place.lat, place.lon,
+         place.asn, place.network))
+
+
+def forget_private(db, tag):
+    db.execute("DELETE FROM private_nodes WHERE tag = ?", (tag,))
+
+
+def private_nodes(db, since):
+    """The private nodes seen since then, ordered by place."""
+    return db.execute(
+        "SELECT height, country, country_name, city, lat, lon, asn, network, last_seen"
+        " FROM private_nodes WHERE last_seen >= ?"
+        " ORDER BY coalesce(country_name, '~'), coalesce(city, '~'), height", (since,)).fetchall()
+
+
+def note_daily(db, day, metric, key, value):
+    """Keep the highest value of the day."""
+    db.execute("INSERT INTO daily VALUES (?, ?, ?, ?) ON CONFLICT (day, metric, key)"
+               " DO UPDATE SET value = max(value, excluded.value)", (day, metric, key or "", value))
