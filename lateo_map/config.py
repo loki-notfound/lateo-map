@@ -19,6 +19,11 @@ class Config:
     p2p_seeds: list = field(default_factory=list)   # "address:port"
     dns_seeds: list = field(default_factory=list)   # names that resolve to P2P nodes
     rpc_seeds: list = field(default_factory=list)   # "host:port", asked for public peers only
+    # Nodes reached by a host name instead of an address, such as one behind
+    # a proxy with several hosts: {name, port, note, link}. They are asked for
+    # get_version like any RPC node and stand in the table; having no single
+    # place, they get no marker on the map.
+    named_nodes: list = field(default_factory=list)
     # the operator's own nodes with unrestricted RPC on a private address: see own.py
     own_nodes: list = field(default_factory=list)   # "host:port"
     # pace
@@ -59,6 +64,17 @@ def load(path):
     config = Config(**raw)
     if not config.database:
         raise ValueError("the setting 'database' is missing")
+    for entry in config.named_nodes:
+        if not isinstance(entry, dict) or not isinstance(entry.get("name"), str) or not entry["name"]:
+            raise ValueError("named_nodes: every entry needs a name")
+        unknown = set(entry) - {"name", "port", "note", "link"}
+        if unknown:
+            raise ValueError(f"named_nodes: unknown keys: {', '.join(sorted(unknown))}")
+        if not isinstance(entry.get("port", 443), int):
+            raise ValueError("named_nodes: the port is a number")
+        link = entry.get("link", "")
+        if link and not (isinstance(link, str) and link.startswith("https://")):
+            raise ValueError("named_nodes: a link starts with https://")
     return config
 
 

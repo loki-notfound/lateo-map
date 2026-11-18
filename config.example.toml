@@ -18,6 +18,11 @@ dns_seeds = []
 # Asked for their public peers only; they get no place on the map by this.
 rpc_seeds = ["node.example:443"]
 
+# A node reached by a host name, such as one behind a proxy with several hosts.
+# It stands in the table under its name and gets no marker on the map.
+# The network its name leads to is looked up; `note` stands where the place would be.
+# named_nodes = [{ name = "node.example", port = 443, link = "https://node.example/" }]
+
 # Everything else has a default; see lateo_map/config.py. For example:
 # gap_seconds = 1.0     # pause between two nodes
 # check_every = 3600    # seconds between checks of a node on the map

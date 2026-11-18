@@ -103,6 +103,28 @@ class GeoTest(Files):
                          (None, None, None, None, None, None, None))
         self.assertEqual(g.place("203.0.113.9"), geo.Place())
 
+    def test_a_node_by_name_gets_the_network_its_name_leads_to(self):
+        self.write("city.mmdb", build(CITY, 28))
+        self.write("asn.mmdb", build(ASN, 24, database_type="Test-ASN"))
+        database = store.connect(":memory:")
+        self.addCleanup(database.close)
+        cfg = config.Config(database=":memory:", geo_dir=self.dir.name,
+                            named_nodes=[{"name": "node.example", "port": 443}])
+
+        class Probes:
+            @staticmethod
+            def get_version(host, port, timeout):
+                from lateo_map import rpc
+                return rpc.Version(13, 11, 905)
+
+            @staticmethod
+            def resolve(name):
+                return ["203.0.113.9", "8.8.8.8"]      # the first has no record
+
+        collector.check_named(database, cfg, Probes, 1000)
+        row = store.named(database, "node.example")
+        self.assertEqual((row["asn"], row["network"], row["height"]), (15169, "Example LLC", 905))
+
     def test_no_files_means_no_locations(self):
         self.assertIsNone(geo.open_dir(self.dir.name))
         self.assertIsNone(geo.open_dir(""))

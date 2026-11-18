@@ -180,6 +180,49 @@ def sow(db, config, probes, now, rng):
     _hear_all(db, config, later, now, rng)
 
 
+def check_named(db, config, probes, now):
+    """Ask the nodes that are reached by name, each once per `check_every`.
+    Only get_version: by name there is no P2P to shake hands with."""
+    store.keep_named(db, {entry["name"] for entry in config.named_nodes})
+    for entry in config.named_nodes:
+        name, port = entry["name"], entry.get("port", 443)
+        row = store.named(db, name)
+        if row is not None and row["last_check"] and now - row["last_check"] < config.check_every - 60:
+            continue
+        try:
+            version = probes.get_version(name, port, config.rpc_timeout)
+        except rpc.RpcError:
+            store.note_named(db, name, port, now)
+            continue
+        store.note_named(db, name, port, now, version.height,
+                         release.from_rpc(version.max_hardfork, version.rpc_minor))
+        _named_network(db, config, probes, name)
+
+
+def _named_network(db, config, probes, name):
+    """Whose network the name leads to. The place of such an address means
+    nothing (a proxy answers from wherever the asker is), the network does."""
+    try:
+        data = geo.open_dir(config.geo_dir)
+    except (OSError, mmdb.FormatError):
+        data = None
+    if data is None:
+        return
+    try:
+        for address in probes.resolve(name):
+            try:
+                place = data.place(address)
+            except (ValueError, mmdb.FormatError):
+                continue
+            if place.network:
+                store.set_named_network(db, name, place.asn, place.network)
+                return
+    except OSError:
+        pass
+    finally:
+        data.close()
+
+
 def run(db, config, probes=Probes, clock=time.time, sleep=time.sleep, rng=random, pool=None):
     """Returns (checks done, of which answered).
 
@@ -191,6 +234,7 @@ def run(db, config, probes=Probes, clock=time.time, sleep=time.sleep, rng=random
     """
     started = clock()
     sow(db, config, probes, int(started), rng)
+    check_named(db, config, probes, int(started))
     own_pool = pool is None
     if own_pool:
         pool = ThreadPoolExecutor(max_workers=max(1, config.side_by_side))

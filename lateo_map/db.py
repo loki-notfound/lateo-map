@@ -61,6 +61,18 @@ CREATE TABLE IF NOT EXISTS private_nodes (     -- see own.py; no address in here
     network      TEXT,
     probed       INTEGER NOT NULL DEFAULT 0    -- when it was last tried from outside
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS named_nodes (       -- nodes reached by a host name; see config.py
+    name       TEXT PRIMARY KEY,
+    port       INTEGER NOT NULL,
+    height     INTEGER,
+    release    TEXT,
+    misses     INTEGER NOT NULL DEFAULT 0,
+    first_ok   INTEGER,
+    last_ok    INTEGER,
+    last_check INTEGER,
+    asn        INTEGER,                        -- the network its name leads to
+    network    TEXT
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS daily (             -- the highest count of each day
     day    TEXT NOT NULL,                      -- YYYY-MM-DD, UTC
     metric TEXT NOT NULL,                      -- kind, country, release, private
@@ -69,7 +81,7 @@ CREATE TABLE IF NOT EXISTS daily (             -- the highest count of each day
     PRIMARY KEY (day, metric, key)
 ) WITHOUT ROWID;
 """
-SCHEMA_VERSION = "4"
+SCHEMA_VERSION = "5"
 
 # from one schema version to the next
 MIGRATIONS = {
@@ -91,12 +103,15 @@ MIGRATIONS = {
     """,
     # private_nodes gains the column `probed`; see _add_missing_columns
     "3": "",
+    # the table named_nodes is new and made by SCHEMA
+    "4": "",
 }
 
 # Columns added to a table that SCHEMA creates. A database from before the
 # table existed gets the whole table from SCHEMA; one that has the table in
 # its older form gets the column here.
-ADDED_COLUMNS = (("private_nodes", "probed", "INTEGER NOT NULL DEFAULT 0"),)
+ADDED_COLUMNS = (("private_nodes", "probed", "INTEGER NOT NULL DEFAULT 0"),
+                 ("named_nodes", "asn", "INTEGER"), ("named_nodes", "network", "TEXT"))
 
 
 def _add_missing_columns(db):
@@ -255,3 +270,30 @@ def note_daily(db, day, metric, key, value):
     """Keep the highest value of the day."""
     db.execute("INSERT INTO daily VALUES (?, ?, ?, ?) ON CONFLICT (day, metric, key)"
                " DO UPDATE SET value = max(value, excluded.value)", (day, metric, key or "", value))
+
+
+def named(db, name):
+    return db.execute("SELECT * FROM named_nodes WHERE name = ?", (name,)).fetchone()
+
+
+def note_named(db, name, port, now, height=None, release=None):
+    """The outcome of a check of a node by name; no height means no answer."""
+    db.execute("INSERT OR IGNORE INTO named_nodes (name, port) VALUES (?, ?)", (name, port))
+    if height is None:
+        db.execute("UPDATE named_nodes SET port = ?, misses = misses + 1, last_check = ? WHERE name = ?",
+                   (port, now, name))
+    else:
+        db.execute("UPDATE named_nodes SET port = ?, height = ?, release = ?, misses = 0,"
+                   " first_ok = coalesce(first_ok, ?), last_ok = ?, last_check = ? WHERE name = ?",
+                   (port, height, release, now, now, now, name))
+
+
+def set_named_network(db, name, asn, network):
+    db.execute("UPDATE named_nodes SET asn = ?, network = ? WHERE name = ?", (asn, network, name))
+
+
+def keep_named(db, names):
+    """Drop the nodes by name that are no longer in the settings."""
+    for row in db.execute("SELECT name FROM named_nodes").fetchall():
+        if row["name"] not in names:
+            db.execute("DELETE FROM named_nodes WHERE name = ?", (row["name"],))

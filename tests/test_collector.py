@@ -306,6 +306,28 @@ class CollectorTest(unittest.TestCase):
             self.run_once()
         self.assertEqual(waits, [1, 2, 4, 7, 30, 30])
 
+    def test_a_node_by_name_is_asked_for_its_version_once_an_hour(self):
+        self.cfg.p2p_seeds = []
+        self.cfg.named_nodes = [{"name": "node.example", "port": 443}]
+        self.net.rpc[("node.example", 443)] = rpc.Version(13, 11, 905)
+        for _ in range(13):                    # an hour of runs, five minutes apart
+            self.run_once()
+            self.now += 300
+        self.assertEqual(self.net.calls, [("version", "node.example", 443)] * 2)
+        row = store.named(self.db, "node.example")
+        self.assertEqual((row["height"], row["release"], row["misses"]), (905, "v2.3.0", 0))
+        self.assertIsNone(row["network"])      # no location data in this test
+        # no handshake, no address in the list of nodes
+        self.assertEqual(store.count(self.db), 0)
+        del self.net.rpc[("node.example", 443)]
+        self.now += 3600
+        self.run_once()
+        self.assertEqual(store.named(self.db, "node.example")["misses"], 1)
+        # taken out of the settings, it is forgotten
+        self.cfg.named_nodes = []
+        self.run_once()
+        self.assertIsNone(store.named(self.db, "node.example"))
+
     def test_never_calls_anything_else(self):
         self.assertEqual(sorted(n for n in vars(collector.Probes) if not n.startswith("_")),
                          ["get_public_nodes", "get_version", "handshake", "inbound_peers", "resolve"])
@@ -484,6 +506,23 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.split_endpoint("8.8.8.8", 5), ("8.8.8.8", 5))
         self.assertEqual(config.split_endpoint("[2606:4700::1]:7", 5), ("2606:4700::1", 7))
         self.assertEqual(config.split_endpoint("2606:4700::1", 5), ("2606:4700::1", 5))
+
+    def test_named_nodes_are_checked_when_the_settings_load(self):
+        import os, tempfile
+        def load(text):
+            with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as f:
+                f.write('database = "x"\n' + text)
+            try:
+                return config.load(f.name)
+            finally:
+                os.unlink(f.name)
+        good = load('named_nodes = [{ name = "node.example", port = 443, note = "n", link = "https://node.example/" }]')
+        self.assertEqual(good.named_nodes[0]["name"], "node.example")
+        for bad in ('named_nodes = ["node.example:443"]', 'named_nodes = [{ port = 443 }]',
+                    'named_nodes = [{ name = "a", colour = "x" }]', 'named_nodes = [{ name = "a", port = "x" }]',
+                    'named_nodes = [{ name = "a", link = "javascript:alert(1)" }]'):
+            with self.assertRaises(ValueError, msg=bad):
+                load(bad)
 
     def test_example_loads_and_unknown_settings_are_refused(self):
         import os, tempfile

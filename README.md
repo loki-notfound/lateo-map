@@ -91,6 +91,7 @@ shows the ones without a default.
 | `site_dir` | empty | Webroot the site is written into; empty means no site. |
 | `site_url` | empty | Public address of the site, for link previews; empty means none. |
 | `p2p_seeds`, `dns_seeds`, `rpc_seeds` | empty | Where discovery starts. |
+| `named_nodes` | empty | Nodes reached by a host name (`{ name, port, note, link }`): asked for `get_version`, shown in the table, not on the map. |
 | `own_nodes` | empty | Your own nodes with unrestricted RPC on a private address, for the private nodes. |
 | `gap_seconds` | `1.0` | Shortest time between the starts of two checks. |
 | `side_by_side` | `4` | Checks under way at the same time. |

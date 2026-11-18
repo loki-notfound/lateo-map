@@ -98,6 +98,31 @@ def load_nodes(db, config):
     return nodes
 
 
+def load_named(db, config):
+    """The nodes reached by a host name: in the table, under their name, with
+    the note from the settings where the place would be, and without a spot
+    on the map."""
+    named = []
+    for entry in config.named_nodes:
+        row = store.named(db, entry["name"])
+        if row is None or row["first_ok"] is None:
+            continue        # never answered: not shown
+        if row["last_ok"] is None or (row["last_check"] or 0) - row["last_ok"] >= config.drop_after:
+            continue        # silent for as long as any node is kept
+        named.append({
+            "ip": None, "name": row["name"], "link": entry.get("link") or None,
+            "note": entry.get("note") or "No single place",
+            "id": "d-" + re.sub(r"[^0-9a-z]", "-", row["name"].lower()),
+            "kind": "rpc", "p2p_port": None, "rpc_port": row["port"],
+            "status": "offline" if row["misses"] >= config.offline_after_misses else "online",
+            "height": row["height"], "release": row["release"], "pruned": False,
+            "country": None, "country_name": None, "region": None, "city": None,
+            "lat": None, "lon": None, "asn": row["asn"], "network": row["network"],
+            "first_seen": row["first_ok"], "last_seen": row["last_ok"],
+        })
+    return named
+
+
 def load_hidden(db, config, now, fresh=2 * 3600):
     """The private nodes (they run but cannot be reached from outside; see
     own.py) as the collector knows them: place, network and height, no
@@ -172,10 +197,12 @@ def row_id(node):
 def title_of(node):
     if node["kind"] == "private":
         return f"Private node · {place_name(node)}"
-    return f"{node['ip']} · {KINDS[node['kind']]} · {place_name(node)} · {node['status']}"
+    return f"{node.get('name') or node['ip']} · {KINDS[node['kind']]} · {place_name(node)} · {node['status']}"
 
 
 def place_name(node):
+    if node.get("note"):
+        return node["note"]
     parts = [node["city"], node["country_name"] or node["country"]]
     return ", ".join(p for p in parts if p) or "Unknown place"
 
@@ -242,7 +269,14 @@ def _row(node):
     version = e(node["release"] or "")
     if node["pruned"]:
         version += ' <span class="lt-muted">pruned</span>'
-    address = f'<code>{e(node["ip"])}</code>' if node["ip"] else '<span class="lt-muted">not shown</span>'
+    if node.get("name"):
+        address = f'<code>{e(node["name"])}</code>'
+        if node.get("link"):
+            address = f'<a href="{e(node["link"])}">{address}</a>'
+    elif node["ip"]:
+        address = f'<code>{e(node["ip"])}</code>'
+    else:
+        address = '<span class="lt-muted">not shown</span>'
     spot = ""
     if node["lat"] is not None and node["lon"] is not None:
         x, y = project(node["lat"], node["lon"])
@@ -285,6 +319,12 @@ HIDDEN_NOTE = """<li><strong>Private nodes</strong> connect out but accept no co
       this site's own nodes, so there are more than shown here. Their place,
       network and height are kept; their address is not, only a short-lived
       fingerprint that counts each node once.</li>
+      """
+
+
+NAMED_NOTE = """<li><strong>Nodes by name</strong> are reached through a host name, with
+      several hosts behind it. They have no single place, so they stand in the
+      table and not on the map.</li>
       """
 
 
@@ -347,6 +387,7 @@ def render(nodes, now, hidden=None, site_url=""):
     generated = stamp(now)
     iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))
     hidden_note = HIDDEN_NOTE if hidden is not None else ""
+    named_note = NAMED_NOTE if any(n.get("name") for n in nodes) else ""
     if hidden is not None:
         lead = ("Public Zephyr nodes found on the network, and private nodes seen "
                 "connecting to it. Checked once per hour.")
@@ -467,7 +508,7 @@ def render(nodes, now, hidden=None, site_url=""):
       learned that way are contacted. Each is checked once per hour with the P2P
       handshake and <code>get_version</code>. A node that is silent for 48 hours
       leaves the map.</li>
-{hidden_note}      <li><strong>Version</strong> is an indication, read from the hardforks a node
+{hidden_note}{named_note}      <li><strong>Version</strong> is an indication, read from the hardforks a node
       knows. Exact builds, host names and how a node's RPC is set up are not
       asked for or shown.</li>
       <li><strong>Place and network</strong> come from
@@ -534,7 +575,8 @@ def build(db, config, now=None):
         shutil.copyfile(os.path.join(STATIC, name), os.path.join(out, name + ".new"))
         os.chmod(os.path.join(out, name + ".new"), 0o644)
         os.replace(os.path.join(out, name + ".new"), os.path.join(out, name))
-    nodes = load_nodes(db, config)
+    # the nodes by name first: they are few and are what a visitor may look for
+    nodes = load_named(db, config) + load_nodes(db, config)
     hidden = load_hidden(db, config, now)
     _write(os.path.join(out, "nodes.json"), json.dumps(data(nodes, now, hidden), indent=1) + "\n")
     _write(os.path.join(out, "index.html"), render(nodes, now, hidden, config.site_url))

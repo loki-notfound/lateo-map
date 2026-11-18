@@ -223,6 +223,37 @@ class SiteTest(unittest.TestCase):
         self.assertRegex(self.page(), r'data-detail="/assets/world-map-50m\.svg\?v=[0-9a-f]{10}"')
         self.assertIn("world-map-50m.svg", os.listdir(os.path.join(self.dir.name, "assets")))
 
+    def test_a_node_by_name_is_in_the_table_and_not_on_the_map(self):
+        add(self.db, "8.8.8.1")
+        self.cfg.named_nodes = [{"name": "node.example", "port": 443, "note": "Behind a proxy, three hosts",
+                                 "link": "https://node.example/"}]
+        self.assertNotIn("node.example", self.page())            # never answered: not shown
+        store.note_named(self.db, "node.example", 443, NOW, 1000, "v2.3.0")
+        page = self.page()
+        row = page[page.index('<tr id="d-node-example"'):]
+        row = row[:row.index("</tr>")]
+        self.assertIn('<a href="https://node.example/"><code>node.example</code></a>', row)
+        self.assertIn("RPC 443", row)
+        self.assertIn("Behind a proxy, three hosts", row)
+        store.set_named_network(self.db, "node.example", 64999, "Proxy Net")
+        self.assertIn('Proxy Net <span class="lt-muted">AS64999</span>', self.page())
+        self.assertIn('data-kind="rpc"', row)
+        self.assertNotIn("data-x=", row)                         # no spot on the map
+        self.assertEqual(page.count('class="lt-map-marker"'), 1)
+        self.assertLess(page.index('<tr id="d-node-example"'), page.index('<tr id="n-8-8-8-1"'))
+        self.assertIn("2 public nodes, 2 answering", page)
+        self.assertIn("<strong>Nodes by name</strong>", page)
+        with open(os.path.join(self.dir.name, "nodes.json"), encoding="utf-8") as f:
+            data = json.load(f)
+        self.assertEqual((data["nodes"][0]["name"], data["nodes"][0]["ip"], data["counts"]["rpc"]),
+                         ("node.example", None, 1))
+        # silent for two checks: shown as offline; silent for two days: gone
+        store.note_named(self.db, "node.example", 443, NOW + 3600)
+        store.note_named(self.db, "node.example", 443, NOW + 7200)
+        self.assertIn("Offline", self.page())
+        store.note_named(self.db, "node.example", 443, NOW + 3 * 86400)
+        self.assertNotIn("node.example", self.page())
+
     def test_empty_map(self):
         page = self.page()
         self.assertIn("0 public nodes, 0 answering", page)
