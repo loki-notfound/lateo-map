@@ -111,7 +111,7 @@ def load_named(db, config):
             continue        # silent for as long as any node is kept
         named.append({
             "ip": None, "name": row["name"], "link": entry.get("link") or None,
-            "note": entry.get("note") or "No single place",
+            "note": entry.get("note") or "Worldwide",
             "id": "d-" + re.sub(r"[^0-9a-z]", "-", row["name"].lower()),
             "kind": "rpc", "p2p_port": None, "rpc_port": row["port"],
             "status": "offline" if row["misses"] >= config.offline_after_misses else "online",
@@ -322,9 +322,9 @@ HIDDEN_NOTE = """<li><strong>Private nodes</strong> connect out but accept no co
       """
 
 
-NAMED_NOTE = """<li><strong>Nodes by name</strong> are reached through a host name, with
-      several hosts behind it. They have no single place, so they stand in the
-      table and not on the map.</li>
+NAMED_NOTE = """<li><strong>Nodes by name</strong> are reached through a host name that
+      answers from many places at once. They have no single place, so they stand
+      in the table and not on the map.</li>
       """
 
 
