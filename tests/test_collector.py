@@ -151,7 +151,7 @@ class CollectorTest(unittest.TestCase):
         for i in range(1, 30):
             store.hear(self.db, f"8.8.4.{i}", 17766, 0, 0, 5)       # long overdue, silent
         store.hear(self.db, A, 17766, 0, 0, 999_999)
-        self.db.execute("UPDATE nodes SET on_map = 1, has_p2p = 1, last_ok = 999_000 WHERE ip = ?", (A,))
+        self.db.execute("UPDATE nodes SET on_map = 1, has_p2p = 1, last_ok = 999000 WHERE ip = ?", (A,))
         self.net.p2p[A] = hs()
         self.cfg.run_seconds = 3
         self.run_once()
