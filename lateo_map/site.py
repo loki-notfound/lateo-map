@@ -6,6 +6,7 @@ with the same nodes, and the stylesheets, icons and script copied from
 page loads nothing from other hosts and carries no inline style or script.
 """
 
+import bisect
 import hashlib
 import html
 import json
@@ -23,8 +24,7 @@ STATIC = os.path.join(HERE, "static")
 WIDTH, HEIGHT = 1000, 500       # the world map, equirectangular
 VIEW = "0 14 1000 400"         # the part shown: without the polar regions
 CLUSTER_RADIUS = 13             # map units; places closer than this are drawn as one
-BEHIND_BLOCKS = 10
-BLOCK_SECONDS = 120
+BEHIND_BLOCKS = 10              # a node this many blocks under the highest height seen is "behind"
 
 KINDS = {  # key: label
     "p2p": "P2P",
@@ -61,18 +61,24 @@ def kind_of(row):
 def load_nodes(db, config):
     """The nodes on the map as plain dicts, with their status worked out."""
     rows = db.execute("SELECT * FROM nodes WHERE on_map = 1").fetchall()
-    # Nodes are checked at different moments of the hour, so a height is
-    # compared with where the chain was when that node answered.
-    live = [r for r in rows if r["height"] and r["last_ok"] and r["misses"] < config.offline_after_misses]
-    newest = max(live, key=lambda r: (r["last_ok"], r["height"]), default=None)
+    # Nodes are checked at different moments of the hour, and blocks do not
+    # come at an even pace. So a node's height is not compared with a guess
+    # of where the chain should have been, but with the highest height any
+    # node had reported by the moment this one answered.
+    reports = db.execute("SELECT at, height FROM checks WHERE height IS NOT NULL ORDER BY at").fetchall()
+    moments, highest, top = [], [], 0
+    for report in reports:
+        top = max(top, report["height"])
+        moments.append(report["at"])
+        highest.append(top)
     nodes = []
     for r in rows:
         status = "online"
         if r["misses"] >= config.offline_after_misses:
             status = "offline"
-        elif newest is not None and r["height"] and r["last_ok"]:
-            expected = newest["height"] - (newest["last_ok"] - r["last_ok"]) / BLOCK_SECONDS
-            if expected - r["height"] > BEHIND_BLOCKS:
+        elif r["height"] and r["last_ok"]:
+            known = bisect.bisect_right(moments, r["last_ok"])
+            if known and highest[known - 1] - r["height"] > BEHIND_BLOCKS:
                 status = "behind"
         nodes.append({
             "ip": r["ip"],
@@ -290,13 +296,13 @@ def _row(node):
         f'<td><span class="kind kind-{node["kind"]}"><svg class="lt-map-kind-mark" viewBox="0 0 16 16" '
         f'width="14" height="14" aria-hidden="true"><use class="lt-map-kind lt-map-kind-{node["kind"]}" '
         f'href="#lt-marker-{node["kind"]}"/></svg>{e(label)}</span></td>'
-        f'<td>{e(", ".join(ports))}</td>'
+        f'<td data-label="Ports">{e(", ".join(ports))}</td>'
         f'<td data-sort="{e((node["country_name"] or "~") + " " + (node["city"] or ""))}">{e(place_name(node))}</td>'
         f'<td>{network}</td>'
         f'<td>{version}</td>'
-        f'<td class="lt-num">{node["height"] or ""}</td>'
+        f'<td class="lt-num" data-label="Height">{node["height"] or ""}</td>'
         f'<td><span class="lt-status lt-status-{status[0]}">{status[1]}</span></td>'
-        f'<td class="lt-num" data-sort="{node["last_seen"] or 0}">{e(stamp(node["last_seen"]))}</td>'
+        f'<td class="lt-num" data-label="Last answer" data-sort="{node["last_seen"] or 0}">{e(stamp(node["last_seen"]))}</td>'
         "</tr>"
     )
 
@@ -319,12 +325,6 @@ HIDDEN_NOTE = """<li><strong>Private nodes</strong> connect out but accept no co
       this site's own nodes, so there are more than shown here. Their place,
       network and height are kept; their address is not, only a short-lived
       fingerprint that counts each node once.</li>
-      """
-
-
-NAMED_NOTE = """<li><strong>Nodes by name</strong> are reached through a host name that
-      answers from many places at once. They have no single place, so they stand
-      in the table and not on the map.</li>
       """
 
 
@@ -368,6 +368,11 @@ def render(nodes, now, hidden=None, site_url=""):
         numbers.append(("Private nodes", len(hidden)))
     numbers += [("P2P only", c["p2p"]), ("RPC only", c["rpc"]), ("P2P and RPC", c["both"]),
                 ("Countries", c["countries"])]
+    # the same numbers in one line, for a screen too small for the tiles
+    summary_line = " · ".join(
+        f"<strong>{value}</strong> {label}" for label, value in
+        [("public", c["nodes"])] + ([("private", len(hidden))] if hidden is not None else [])
+        + [("countries", c["countries"])])
     tiles = "".join(
         f'<div class="lt-stat-tile"><span class="lt-stat-label">{label}</span>'
         f'<span class="lt-stat-value">{value}</span></div>' for label, value in numbers)
@@ -387,7 +392,6 @@ def render(nodes, now, hidden=None, site_url=""):
     generated = stamp(now)
     iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))
     hidden_note = HIDDEN_NOTE if hidden is not None else ""
-    named_note = NAMED_NOTE if any(n.get("name") for n in nodes) else ""
     if hidden is not None:
         lead = ("Public Zephyr nodes found on the network, and private nodes seen "
                 "connecting to it. Checked once per hour.")
@@ -433,6 +437,7 @@ def render(nodes, now, hidden=None, site_url=""):
   <p class="lead">{lead} Last update <time id="updated" datetime="{iso}" data-epoch="{int(now)}">{e(generated)}</time>.</p>
   <p id="stale" class="lt-callout lt-callout-warning" role="status" hidden>These numbers are older than they should be: the map has not been updated for a while.</p>
 
+  <p class="summary">{summary_line}</p>
   <div class="lt-stat-grid">{tiles}</div>
 
   <section id="map" aria-label="Map">
@@ -510,7 +515,7 @@ def render(nodes, now, hidden=None, site_url=""):
       learned that way are contacted. Each is checked once per hour with the P2P
       handshake and <code>get_version</code>. A node that is silent for 48 hours
       leaves the map.</li>
-{hidden_note}{named_note}      <li><strong>Version</strong> is an indication, read from the hardforks a node
+{hidden_note}      <li><strong>Version</strong> is an indication, read from the hardforks a node
       knows. Exact builds, host names and how a node's RPC is set up are not
       asked for or shown.</li>
       <li><strong>Place and network</strong> come from

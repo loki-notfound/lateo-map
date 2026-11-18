@@ -18,6 +18,8 @@ def add(db, ip, *, p2p=True, rpc=False, misses=0, height=1000, last_ok=NOW, lat=
         " country_name = 'Germany', network = ?, asn = 64500, release = ? WHERE ip = ?",
         (int(p2p), int(rpc), 17767 if rpc else 0, misses, height, last_ok, last_ok, lat, lon, city,
          network, release, ip))
+    # what the collector notes with every answer
+    db.execute("INSERT INTO checks VALUES (?, ?, ?, ?, ?)", (ip, last_ok, int(p2p), int(rpc), height))
 
 
 class SiteTest(unittest.TestCase):
@@ -54,12 +56,21 @@ class SiteTest(unittest.TestCase):
         self.assertEqual((nodes["8.8.8.1"]["p2p_port"], nodes["8.8.8.1"]["rpc_port"]), (17766, None))
         self.assertEqual(nodes["8.8.8.2"]["p2p_port"], None)
 
-    def test_a_node_checked_earlier_in_the_hour_is_not_behind(self):
+    def test_behind_is_measured_against_what_was_known_when_the_node_answered(self):
         add(self.db, "8.8.8.1", height=1000, last_ok=NOW)
-        add(self.db, "8.8.8.2", height=975, last_ok=NOW - 3000)      # 25 blocks ago
-        add(self.db, "8.8.8.3", height=960, last_ok=NOW - 3000)      # really 15 behind
+        add(self.db, "8.8.8.2", height=975, last_ok=NOW - 3000)      # the highest of its moment
+        add(self.db, "8.8.8.3", height=960, last_ok=NOW - 3000)      # 15 under it: behind
         nodes = {n["ip"]: n["status"] for n in site.load_nodes(self.db, self.cfg)}
         self.assertEqual(nodes, {"8.8.8.1": "online", "8.8.8.2": "online", "8.8.8.3": "behind"})
+
+    def test_a_burst_of_blocks_since_a_node_answered_does_not_make_it_behind(self):
+        # fifty blocks came in the fifty minutes after this node answered, twice the usual
+        # pace; a guess from the clock would call it behind, the reports of its moment do not
+        add(self.db, "8.8.8.1", height=1000, last_ok=NOW)
+        add(self.db, "8.8.8.2", height=948, last_ok=NOW - 3000)
+        add(self.db, "8.8.8.3", height=950, last_ok=NOW - 3050)
+        nodes = {n["ip"]: n["status"] for n in site.load_nodes(self.db, self.cfg)}
+        self.assertEqual(set(nodes.values()), {"online"})
 
     def test_only_nodes_on_the_map_and_nothing_about_the_rpc_mode(self):
         add(self.db, "8.8.8.1")
@@ -242,7 +253,7 @@ class SiteTest(unittest.TestCase):
         self.assertEqual(page.count('class="lt-map-marker"'), 1)
         self.assertLess(page.index('<tr id="d-node-example"'), page.index('<tr id="n-8-8-8-1"'))
         self.assertIn("2 public nodes, 2 answering", page)
-        self.assertIn("<strong>Nodes by name</strong>", page)
+        self.assertNotIn("Nodes by name", page)
         with open(os.path.join(self.dir.name, "nodes.json"), encoding="utf-8") as f:
             data = json.load(f)
         self.assertEqual((data["nodes"][0]["name"], data["nodes"][0]["ip"], data["counts"]["rpc"]),
@@ -253,6 +264,15 @@ class SiteTest(unittest.TestCase):
         self.assertIn("Offline", self.page())
         store.note_named(self.db, "node.example", 443, NOW + 3 * 86400)
         self.assertNotIn("node.example", self.page())
+
+    def test_numbers_in_one_line_and_labels_for_the_cells_of_a_narrow_screen(self):
+        add(self.db, "8.8.8.1")
+        self.assertIn('<p class="summary"><strong>1</strong> public · <strong>1</strong> countries</p>', self.page())
+        self.hide([{"country": "NL", "country_name": "Netherlands", "city": "Utrecht", "lat": 52.1, "lon": 5.1}])
+        page = self.page()
+        self.assertIn('<strong>1</strong> public · <strong>1</strong> private · <strong>1</strong> countries', page)
+        for label in ("Ports", "Height", "Last answer"):
+            self.assertIn(f'data-label="{label}"', page)
 
     def test_empty_map(self):
         page = self.page()

@@ -93,7 +93,28 @@ SCENARIOS = {
         report({ screen: window.innerWidth, frame: frame.clientWidth, scroll: frame.scrollWidth,
                  map: Math.round(svg.getBoundingClientRect().width),
                  page: document.documentElement.scrollWidth, markers: markers(),
-                 marker: Math.round(one.width), noteAbove: note.bottom <= box.top + 1, noteHeight: note.height }); });""",
+                 marker: Math.round(one.width), noteAbove: note.bottom <= box.top + 1, noteHeight: note.height,
+                 view: svg.getAttribute('viewBox').split(' ').map(Number),
+                 tiles: getComputedStyle(document.querySelector('.lt-stat-grid')).display,
+                 summary: getComputedStyle(document.querySelector('.summary')).display,
+                 switchesAtTable: getComputedStyle(document.querySelector('.controls .filters')).display,
+                 row: (function () {
+                     var row = rows().filter(function (r) { return !r.hidden; })[1], ports = row.cells[2];
+                     var closed = getComputedStyle(ports).display;
+                     row.cells[3].click();
+                     return { layout: getComputedStyle(row).display, closed: closed,
+                              open: getComputedStyle(ports).display, head: document.querySelector('#node-table thead').offsetHeight };
+                 })() }); });""",
+    "lying": """play(function () {
+        var svg = document.querySelector('.lt-map-canvas').getBoundingClientRect();
+        var bar = document.querySelector('.lt-map-toolbar').getBoundingClientRect();
+        report({ view: document.querySelector('.lt-map-canvas').getAttribute('viewBox'),
+                 legendBeside: bar.left >= svg.right - 1 && bar.top < svg.bottom,
+                 mapFits: svg.bottom - svg.top <= window.innerHeight,
+                 tiles: getComputedStyle(document.querySelector('.lt-stat-grid')).display,
+                 summary: getComputedStyle(document.querySelector('.summary')).display,
+                 table: getComputedStyle(document.querySelector('#node-table tbody tr')).display,
+                 page: document.documentElement.scrollWidth <= window.innerWidth }); });""",
     "desk": """play(function () {
         var svg = document.querySelector('.lt-map-canvas').getBoundingClientRect();
         var one = document.querySelector('.lt-map-marker use').getBoundingClientRect();
@@ -275,6 +296,20 @@ class BrowserTest(unittest.TestCase):
         # a P2P marker is a circle of ten in a box of sixteen: as large as on a desk a thousand wide
         self.assertEqual(r["marker"], 10)
         self.assertTrue(r["noteAbove"] and r["noteHeight"] > 0)   # the note stands above the box
+        # the map is higher than the world's own shape and opens on a part of it
+        self.assertAlmostEqual(r["view"][2] / r["view"][3], 4 / 3, places=2)
+        self.assertLess(r["view"][2], 1000)
+        # the numbers in one line instead of tiles; the switches only at the map
+        self.assertEqual((r["tiles"], r["summary"], r["switchesAtTable"]), ("none", "block", "none"))
+        # a row is a block that opens for the rest of its details
+        self.assertEqual(r["row"], {"layout": "grid", "closed": "none", "open": "block", "head": 1})
+
+    def test_on_a_phone_lying_down_the_legend_stands_beside_the_map(self):
+        r = self.play("lying", "844,390")
+        self.assertEqual(r["view"], site.VIEW)                # the whole world, in its own shape
+        self.assertTrue(r["legendBeside"] and r["mapFits"] and r["page"])
+        self.assertEqual((r["tiles"], r["summary"]), ("none", "block"))
+        self.assertEqual(r["table"], "table-row")             # wide enough for a table
 
     def test_on_a_wide_screen_markers_grow_with_the_map_and_the_note_is_on_it(self):
         r = self.play("desk", "1600,900")

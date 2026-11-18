@@ -51,6 +51,8 @@
   var WORLD = svg.getAttribute("viewBox").split(" ").map(Number);   // x, y, width, height
   var view = WORLD.slice();
   var MAX_ZOOM = 16;
+  var coarse = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+  function docked() { return !!card && card.classList.contains("is-docked"); }
 
   if (controls) controls.hidden = false;
   if (zoomBox) zoomBox.hidden = false;
@@ -251,7 +253,22 @@
     card.style.top = Math.max(8, top) + "px";
   }
 
-  function hideCard() { if (card) card.hidden = true; }
+  function hideCard() { if (card && !card.classList.contains("is-docked")) card.hidden = true; }
+
+  // Under a finger there is no hovering: the card of what was tapped stands
+  // under the map until the pick is let go.
+  function dock(group, label) {
+    if (!card) return;
+    fill(group, label);
+    card.style.left = card.style.top = "";
+    card.classList.add("is-docked");
+    card.hidden = false;
+  }
+  function undock() {
+    if (!card || !card.classList.contains("is-docked")) return;
+    card.classList.remove("is-docked");
+    card.hidden = true;
+  }
 
   // A note on the map says what is picked, with the way to the table.
   function showPicked() {
@@ -259,7 +276,7 @@
     if (!tip) return;
     while (tip.firstChild) tip.removeChild(tip.firstChild);
     tip.hidden = !picked;
-    if (!picked) return;
+    if (!picked) { undock(); return; }
     var count = picked.length;
     tip.appendChild(document.createTextNode(
       (count === 1 ? "1 node" : count + " nodes") + " picked. "));
@@ -304,8 +321,9 @@
       // No <title> inside: the browser would show it as a second, small
       // tooltip beside the card. The label is there for screen readers.
       var link = el("a", { "class": "lt-map-marker", href: "#" + first.id, "aria-label": label });
+      // the target of a marker: larger than the marker, and larger still for a finger
       link.appendChild(el("circle", { "class": "lt-map-hit", cx: group.x, cy: group.y,
-                                       r: (size(count) + 7) * unit }));
+                                       r: Math.max(size(count) + 7, coarse ? 22 : 0) * unit }));
       if (count === 1) {
         var kind = first.dataset.kind;
         link.appendChild(el("use", {
@@ -341,10 +359,11 @@
       }
       if (same(picked, ids)) link.classList.add("is-selected");
       link.addEventListener("pointerenter", function (event) {
+        if (event.pointerType === "touch" || docked()) return;
         showCard(group.rows, label, event.clientX, event.clientY);
       });
       link.addEventListener("pointermove", function (event) {
-        if (!card.hidden) showCard(group.rows, label, event.clientX, event.clientY);
+        if (card && !card.hidden && !docked()) showCard(group.rows, label, event.clientX, event.clientY);
       });
       link.addEventListener("pointerleave", hideCard);
       link.addEventListener("focus", function () {
@@ -357,7 +376,9 @@
         if (moved) return;
         // a second click on the same marker lets go of it
         picked = same(picked, ids) ? null : ids;
+        var byFinger = touched;
         apply();
+        if (picked && byFinger) dock(group.rows, label);
       });
       layer.appendChild(link);
     });
@@ -367,11 +388,22 @@
 
   var moved = false;      // a drag just ended: its click is not a pick
 
+  // The shape of the map on the screen, width by height. On an upright
+  // phone the world's own shape leaves a strip too low to read, so the map
+  // is higher there and opens on the part of the world with the most nodes;
+  // the button for the whole world shows it all, with sea above and below.
+  var shape = WORLD[2] / WORLD[3];
+  function wantedShape() {
+    var upright = window.innerWidth < 640 && window.innerHeight > window.innerWidth;
+    return upright ? 4 / 3 : WORLD[2] / WORLD[3];
+  }
+
   function setView(x, y, width) {
     width = Math.min(WORLD[2], Math.max(WORLD[2] / MAX_ZOOM, width));
-    var height = width * WORLD[3] / WORLD[2];
+    var height = width / shape;
     x = Math.min(WORLD[0] + WORLD[2] - width, Math.max(WORLD[0], x));
-    y = Math.min(WORLD[1] + WORLD[3] - height, Math.max(WORLD[1], y));
+    if (height >= WORLD[3]) y = WORLD[1] - (height - WORLD[3]) / 2;     // all of it, centred
+    else y = Math.min(WORLD[1] + WORLD[3] - height, Math.max(WORLD[1], y));
     view = [x, y, width, height];
     svg.setAttribute("viewBox", view.join(" "));
     svg.classList.toggle("is-zoomed", width < WORLD[2]);
@@ -437,6 +469,7 @@
     zoomAt(event.deltaY < 0 ? 1.25 : 0.8, event.clientX, event.clientY);
   }, { passive: false });
 
+  var touched = false;    // the last pointer on the map was a finger
   var fingers = {};       // pointers down on the map
   var last = null;        // distance and centre of two fingers
 
@@ -447,6 +480,7 @@
   }
 
   svg.addEventListener("pointerdown", function (event) {
+    touched = event.pointerType === "touch" || event.pointerType === "pen";
     fingers[event.pointerId] = { x: event.clientX, y: event.clientY };
     moved = false;
     if (Object.keys(fingers).length === 2) last = span();
@@ -458,8 +492,15 @@
     var dx = event.clientX - before.x, dy = event.clientY - before.y;
     fingers[event.pointerId] = { x: event.clientX, y: event.clientY };
     if (count === 2) {
+      // two fingers zoom the map and move it; one finger up or down is left
+      // to the page, so that a visitor can scroll past the map
       var now = span();
-      if (last && last.d > 0) zoomAt(now.d / last.d, now.x, now.y);
+      if (last && last.d > 0) {
+        zoomAt(now.d / last.d, now.x, now.y);
+        var area = svg.getBoundingClientRect();
+        setView(view[0] - (now.x - last.x) / area.width * view[2],
+                view[1] - (now.y - last.y) / area.height * view[3], view[2]);
+      }
       last = now;
       moved = true;
     } else if (count === 1 && view[2] < WORLD[2] && (moved || Math.abs(dx) + Math.abs(dy) > 3)) {
@@ -476,17 +517,31 @@
   svg.addEventListener("pointerup", release);
   svg.addEventListener("pointercancel", release);
 
-  // a turned phone or a resized window: the markers are sized anew
+  // Where the map opens: the whole world, or on an upright phone the part
+  // with the most nodes, as high as the world is.
+  function home() {
+    shape = wantedShape();
+    var width = Math.min(WORLD[2], WORLD[3] * shape);
+    var xs = rows.filter(function (row) { return row.dataset.x && !row.hidden; })
+                 .map(function (row) { return Number(row.dataset.x); })
+                 .sort(function (a, b) { return a - b; });
+    var middle = xs.length ? xs[Math.floor(xs.length / 2)] : WORLD[0] + WORLD[2] / 2;
+    setView(middle - width / 2, WORLD[1], width);
+  }
+
+  // a turned phone or a resized window: another shape, or markers sized anew
   var resized = null;
   window.addEventListener("resize", function () {
     clearTimeout(resized);
-    resized = setTimeout(draw, 150);
+    resized = setTimeout(function () {
+      if (wantedShape() !== shape) home(); else draw();
+    }, 150);
   });
 
   // on a touch screen the hint speaks of fingers, not of a mouse
   var hint = document.getElementById("legend-hint");
-  if (hint && window.matchMedia && window.matchMedia("(pointer: coarse)").matches) {
-    hint.textContent = " Tap a kind to show or hide it. Zoom with the buttons or with two fingers.";
+  if (hint && coarse) {
+    hint.textContent = " Tap a kind to show or hide it. Zoom and move the map with two fingers or the buttons.";
   }
 
   svg.setAttribute("tabindex", "0");
@@ -537,7 +592,7 @@
 
   function takeOver(doc) {
     if (signature(doc) !== signature(document)) { location.reload(); return; }
-    [".lt-stat-grid", ".lead", "#nodes-caption"].forEach(function (selector) {
+    [".lt-stat-grid", ".summary", ".lead", "#nodes-caption"].forEach(function (selector) {
       var fresh = doc.querySelector(selector), old = document.querySelector(selector);
       if (!fresh || !old) return;
       while (old.firstChild) old.removeChild(old.firstChild);
@@ -587,6 +642,17 @@
   setInterval(refresh, REFRESH);
   document.addEventListener("visibilitychange", refresh);
 
+  // On a narrow screen a row is a small block that opens for the rest of
+  // its details. Without this script every detail is shown.
+  table.classList.add("can-open");
+  body.addEventListener("click", function (event) {
+    var target = event.target;
+    if (target.closest && (target.closest("a") || target.closest("button"))) return;
+    var row = target.closest ? target.closest("tr") : null;
+    if (row) row.classList.toggle("is-open");
+  });
+
   showSwitches();
   apply();
+  if (wantedShape() !== shape) home();
 })();
