@@ -9,6 +9,8 @@ geo_dir = "/path/outside/the/webroot/geo"
 
 # The webroot the site is written into.
 site_dir = "/path/of/the/webroot"
+# Its public address; with it the page carries the data of a link preview.
+site_url = "https://map.example"
 
 # Where discovery starts.
 p2p_seeds = ["192.0.2.10:17766", "192.0.2.11:17766"]

@@ -14,6 +14,7 @@ class Config:
     database: str = ""
     geo_dir: str = ""               # where the DB-IP files are kept; empty: no locations
     site_dir: str = ""              # the webroot the site is written into; empty: no site
+    site_url: str = ""              # its public address, for link previews; empty: none
     # where discovery starts
     p2p_seeds: list = field(default_factory=list)   # "address:port"
     dns_seeds: list = field(default_factory=list)   # names that resolve to P2P nodes

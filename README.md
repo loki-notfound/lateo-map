@@ -89,6 +89,7 @@ shows the ones without a default.
 | `database` | none | Path of the SQLite file. |
 | `geo_dir` | empty | Directory of the DB-IP files; empty means no locations. |
 | `site_dir` | empty | Webroot the site is written into; empty means no site. |
+| `site_url` | empty | Public address of the site, for link previews; empty means none. |
 | `p2p_seeds`, `dns_seeds`, `rpc_seeds` | empty | Where discovery starts. |
 | `own_nodes` | empty | Your own nodes with unrestricted RPC on a private address, for the private nodes. |
 | `gap_seconds` | `1.0` | Shortest time between the starts of two checks. |

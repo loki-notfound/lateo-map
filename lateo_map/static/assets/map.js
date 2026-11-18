@@ -16,7 +16,7 @@
   var body = table.tBodies[0];
   var rows = Array.prototype.slice.call(body.rows);
   var controls = document.querySelector(".controls");
-  var zoomBox = document.querySelector(".zoom");
+  var zoomBox = document.querySelector(".lt-map-zoom");
   var search = document.getElementById("q");
   var reset = document.getElementById("reset");
   var shown = document.getElementById("shown");
@@ -30,7 +30,7 @@
   Array.prototype.forEach.call(document.querySelectorAll("#legend li[data-filter]"), function (item) {
     var button = document.createElement("button");
     button.type = "button";
-    button.className = "filter legend-switch";
+    button.className = "lt-map-switch";
     button.dataset.filter = item.dataset.filter;
     button.dataset.value = item.dataset.value;
     while (item.firstChild.firstChild) button.appendChild(item.firstChild.firstChild);
@@ -38,7 +38,7 @@
   });
   var legendHint = document.getElementById("legend-hint");
   if (legendHint) legendHint.hidden = false;
-  var buttons = Array.prototype.slice.call(document.querySelectorAll(".filter"));
+  var buttons = Array.prototype.slice.call(document.querySelectorAll(".lt-map-switch"));
 
   // The kinds that are switched off. Every kind is on at first except the
   // private nodes: those a visitor switches on. The version is a separate
@@ -206,7 +206,7 @@
     if (className) p.className = className;
     if (name) {
       var label = document.createElement("span");
-      label.className = "map-tip-label";
+      label.className = "lt-map-card-label";
       label.textContent = name;
       p.appendChild(label);
     }
@@ -219,7 +219,7 @@
     while (card.firstChild) card.removeChild(card.firstChild);
     if (group.length === 1) {
       var row = group[0];
-      line(card, "", row.dataset.kind === "private" ? "Private node" : cell(row, 0), "map-tip-title");
+      line(card, "", row.dataset.kind === "private" ? "Private node" : cell(row, 0), "lt-map-card-title");
       line(card, "Kind", cell(row, 1));
       line(card, "Ports", cell(row, 2));
       line(card, "Place", cell(row, 3));
@@ -229,13 +229,13 @@
       line(card, "Status", cell(row, 7));
       line(card, "Last answer", cell(row, 8));
     } else {
-      line(card, "", label, "map-tip-title");
+      line(card, "", label, "lt-map-card-title");
       group.slice(0, 8).forEach(function (row) {
         var name = row.dataset.kind === "private" ? "Private node" : cell(row, 0);
         line(card, "", [name, cell(row, 1), cell(row, 5), cell(row, 7)].filter(Boolean).join(" · "));
       });
-      if (group.length > 8) line(card, "", "and " + (group.length - 8) + " more", "map-tip-more");
-      line(card, "", "Click to list them in the table.", "map-tip-more");
+      if (group.length > 8) line(card, "", "and " + (group.length - 8) + " more", "lt-map-card-more");
+      line(card, "", "Click to list them in the table.", "lt-map-card-more");
     }
   }
 
@@ -299,17 +299,17 @@
       // No <title> inside: the browser would show it as a second, small
       // tooltip beside the card. The label is there for screen readers.
       var link = el("a", { "class": "lt-map-marker", href: "#" + first.id, "aria-label": label });
-      link.appendChild(el("circle", { "class": "mk-hit", cx: group.x, cy: group.y,
+      link.appendChild(el("circle", { "class": "lt-map-hit", cx: group.x, cy: group.y,
                                        r: (size(count) + 7) * unit }));
       if (count === 1) {
         var kind = first.dataset.kind;
         link.appendChild(el("use", {
-          "class": "mk mk-" + kind + (first.dataset.status === "offline" ? " is-offline" : ""),
-          href: "#m-" + kind, x: group.x - 8 * unit, y: group.y - 8 * unit,
+          "class": "lt-map-kind lt-map-kind-" + kind + (first.dataset.status === "offline" ? " is-offline" : ""),
+          href: "#lt-marker-" + kind, x: group.x - 8 * unit, y: group.y - 8 * unit,
           width: 16 * unit, height: 16 * unit
         }));
       } else {
-        link.appendChild(el("circle", { "class": "mk-cluster", cx: group.x, cy: group.y,
+        link.appendChild(el("circle", { "class": "lt-map-group", cx: group.x, cy: group.y,
                                          r: size(count) * unit }));
         // A ring around the group shows which kinds are in it, each kind an
         // arc as long as its share.
@@ -318,15 +318,18 @@
         ["p2p", "rpc", "both", "private"].forEach(function (kind) {
           if (!shares[kind]) return;
           var part = shares[kind] / count * 100;
-          link.appendChild(el("circle", {
-            "class": "mk-ring mk-ring-" + kind, cx: group.x, cy: group.y,
+          var arc = el("circle", {
+            "class": "lt-map-ring lt-map-ring-" + kind, cx: group.x, cy: group.y,
             r: (size(count) + 2.5) * unit, pathLength: 100,
             "stroke-dasharray": part + " " + (100 - part), "stroke-dashoffset": -start,
             transform: "rotate(-90 " + group.x + " " + group.y + ")"
-          }));
+          });
+          // in map units, so that the arcs keep their length when zoomed
+          arc.style.strokeWidth = (3.5 * unit) + "px";
+          link.appendChild(arc);
           start += part;
         });
-        var text = el("text", { "class": "mk-cluster-text", x: group.x, y: group.y });
+        var text = el("text", { "class": "lt-map-group-text", x: group.x, y: group.y });
         text.style.fontSize = (11 * unit) + "px";
         text.textContent = count;
         link.appendChild(text);
@@ -367,7 +370,27 @@
     view = [x, y, width, height];
     svg.setAttribute("viewBox", view.join(" "));
     svg.classList.toggle("is-zoomed", width < WORLD[2]);
+    if (width <= WORLD[2] / 3) finer();
     draw();
+  }
+
+  // The page carries the coarse outlines of the world. Zoomed in three times
+  // or more, the finer ones are fetched once and put in their place.
+  var detail = svg.dataset.detail ? "wanted" : "none";
+  function finer() {
+    if (detail !== "wanted") return;
+    detail = "asked";
+    fetch(svg.dataset.detail, { credentials: "omit" })
+      .then(function (response) { return response.ok ? response.text() : Promise.reject(); })
+      .then(function (text) {
+        var fine = new DOMParser().parseFromString(text, "image/svg+xml");
+        [["lt-map-land", ".lt-map-land"], ["lt-map-borders", ".lt-map-borders"]].forEach(function (pair) {
+          var from = fine.getElementById(pair[0]), to = svg.querySelector("path" + pair[1]);
+          if (from && to && from.getAttribute("d")) to.setAttribute("d", from.getAttribute("d"));
+        });
+        detail = "there";
+      })
+      .catch(function () { detail = "wanted"; });
   }
 
   function toMap(clientX, clientY) {
@@ -474,7 +497,7 @@
 
   function signature(doc) {
     var parts = [];
-    Array.prototype.forEach.call(doc.querySelectorAll(".controls .filter, script[src]"), function (node) {
+    Array.prototype.forEach.call(doc.querySelectorAll(".controls .lt-map-switch, script[src]"), function (node) {
       parts.push(node.getAttribute("src") || node.dataset.filter + "=" + node.dataset.value);
     });
     return parts.join("|");

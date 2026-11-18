@@ -197,16 +197,31 @@ class SiteTest(unittest.TestCase):
         self.assertIn('<section id="map" aria-label="Map">', page)
         # no title element on the map or in it besides the markers': a browser shows one as a tooltip
         self.assertNotIn("map-svg-title", page)
-        self.assertRegex(page, r'<svg class="lt-map-canvas"[^>]* aria-label="World map with \d+ Zephyr nodes"')
-        self.assertIn('<div id="hover" class="map-tip" hidden></div>', page)
+        self.assertRegex(page, r'<svg class="lt-map-canvas lt-map-zoomable"[^>]* aria-label="World map with \d+ Zephyr nodes"')
+        self.assertIn('<div id="hover" class="lt-map-card" hidden></div>', page)
         self.assertIn('data-zoom="clear"', page)
         # the note about a pick is written on the map, not under it
         frame = page[page.index('class="lt-map-frame"'):page.index('class="lt-map-toolbar"')]
-        self.assertIn('<p id="tip" class="map-pick" role="status" hidden></p>', frame)
+        self.assertIn('<p id="tip" class="lt-map-note" role="status" hidden></p>', frame)
 
     def test_address_is_kept_out_of_a_proxy_that_rewrites_addresses(self):
         # such a proxy adds a script of its own, which the policy and the map links do not want
         self.assertIn('<!--email_off--><a href="mailto:', self.page())
+
+    def test_link_preview_only_with_the_address_of_the_site(self):
+        add(self.db, "8.8.8.1")
+        self.assertNotIn("og:", self.page())
+        self.cfg.site_url = "https://map.example/"
+        page = self.page()
+        self.assertIn('<meta property="og:title" content="Zephyr node map">', page)
+        self.assertIn('<meta property="og:url" content="https://map.example/">', page)
+        self.assertRegex(page, r'<meta property="og:image" content="https://map\.example/assets/og\.png\?v=[0-9a-f]{10}">')
+        self.assertIn("og.png", os.listdir(os.path.join(self.dir.name, "assets")))
+
+    def test_finer_outlines_are_on_offer_for_the_script(self):
+        add(self.db, "8.8.8.1")
+        self.assertRegex(self.page(), r'data-detail="/assets/world-map-50m\.svg\?v=[0-9a-f]{10}"')
+        self.assertIn("world-map-50m.svg", os.listdir(os.path.join(self.dir.name, "assets")))
 
     def test_empty_map(self):
         page = self.page()

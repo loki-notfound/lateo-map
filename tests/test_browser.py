@@ -35,9 +35,9 @@ function play(steps) { window.addEventListener('load', function () { setTimeout(
 SCENARIOS = {
     "start": """play(function () { report({
         rows: rows().length, shown: shown(), privateShown: shown('private'), markers: markers(),
-        controls: !document.querySelector('.controls').hidden, zoom: !document.querySelector('.zoom').hidden,
+        controls: !document.querySelector('.controls').hidden, zoom: !document.querySelector('.lt-map-zoom').hidden,
         titles: document.querySelectorAll('#markers title, .lt-map-canvas > title').length,
-        rings: document.querySelectorAll('.mk-ring').length, stale: !document.getElementById('stale').hidden,
+        rings: document.querySelectorAll('.lt-map-ring').length, stale: !document.getElementById('stale').hidden,
         legend: document.querySelectorAll('#legend button').length }); });""",
     "only_private": """play(function () {
         ['p2p', 'rpc', 'both'].forEach(function (k) { click('#legend button[data-value=' + k + ']'); });
@@ -51,7 +51,7 @@ SCENARIOS = {
         var one = shown(); click('#reset');
         report({ one: one, all: shown(), value: v.value }); });""",
     "pick": """play(function () {
-        var group = [].filter.call(document.querySelectorAll('.lt-map-marker'), function (m) { return m.querySelector('.mk-cluster'); })[0];
+        var group = [].filter.call(document.querySelectorAll('.lt-map-marker'), function (m) { return m.querySelector('.lt-map-group'); })[0];
         group.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
         var picked = { shown: shown(), note: document.getElementById('tip').textContent,
                        noteInFrame: !!document.querySelector('.lt-map-frame #tip'),
@@ -147,7 +147,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if name == "old_page":
                 # a page from before the newer parts existed
                 for pattern in (r'<div id="hover"[^>]*></div>', r'<p id="tip"[^>]*></p>',
-                                r'<div class="zoom" hidden>.*?</div>', r'<label class="search">Version.*?</label>',
+                                r'<div class="lt-map-zoom" hidden>.*?</div>', r'<label class="search">Version.*?</label>',
                                 r'<p id="nothing"[^>]*>.*?</p>', r'<p id="stale"[^>]*>.*?</p>'):
                     page = re.sub(pattern, "", page, flags=re.S)
             if name == "stale":

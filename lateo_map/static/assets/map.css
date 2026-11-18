@@ -23,6 +23,54 @@
 .lt-map-pin-bg{fill:var(--lt-surface);stroke:var(--lt-line-strong);stroke-width:1}
 .lt-map-pin-label{fill:var(--lt-fg);font:600 11px/1.2 var(--lt-font-sans)}
 
+/* Kinds of node (P2P, RPC, both, private): colour and shape say the kind, filled or hollow the status */
+.lt-map-kind{stroke:var(--lt-surface);stroke-width:2;paint-order:stroke;vector-effect:non-scaling-stroke}
+.lt-map-kind-p2p{fill:var(--lt-map-kind-p2p)}
+.lt-map-kind-rpc{fill:var(--lt-map-kind-rpc)}
+.lt-map-kind-both{fill:var(--lt-map-kind-both)}
+.lt-map-kind-private{fill:var(--lt-map-kind-private)}
+.lt-map-kind.is-offline{fill:var(--lt-surface);stroke-width:2.25}
+.lt-map-kind-p2p.is-offline{stroke:var(--lt-map-kind-p2p)}
+.lt-map-kind-rpc.is-offline{stroke:var(--lt-map-kind-rpc)}
+.lt-map-kind-both.is-offline{stroke:var(--lt-map-kind-both)}
+.lt-map-kind-private.is-offline{stroke:var(--lt-map-kind-private)}
+.lt-map-kind-mark{flex:none;overflow:visible}
+/* A group of nodes at one spot: neutral, with a ring that has an arc per kind */
+.lt-map-group{fill:var(--lt-fg);stroke:var(--lt-surface);stroke-width:2;vector-effect:non-scaling-stroke}
+.lt-map-group-text{fill:var(--lt-bg);font:700 11px/1 var(--lt-font-mono);text-anchor:middle;dominant-baseline:central;pointer-events:none}
+.lt-map-group-swatch{display:inline-grid;place-items:center;width:1.1rem;height:1.1rem;border-radius:50%;background:var(--lt-fg);color:var(--lt-bg);font:700 .65rem/1 var(--lt-font-mono)}
+.lt-map-ring{fill:none;stroke-width:3.5;pointer-events:none}
+.lt-map-ring-p2p{stroke:var(--lt-map-kind-p2p)}
+.lt-map-ring-rpc{stroke:var(--lt-map-kind-rpc)}
+.lt-map-ring-both{stroke:var(--lt-map-kind-both)}
+.lt-map-ring-private{stroke:var(--lt-map-kind-private)}
+.lt-map-hit{fill:transparent;vector-effect:non-scaling-stroke}
+.lt-map-marker:focus-visible{outline:none}
+.lt-map-marker:hover .lt-map-hit,.lt-map-marker:focus-visible .lt-map-hit,.lt-map-marker.is-selected .lt-map-hit{fill:none;stroke:var(--lt-map-selection);stroke-width:2}
+/* A map that zooms by its own view: lines keep their width */
+.lt-map-zoomable .lt-map-land,.lt-map-zoomable .lt-map-borders,.lt-map-zoomable .lt-map-graticule{vector-effect:non-scaling-stroke}
+.lt-map-zoomable:focus-visible{outline:var(--lt-focus-width) solid var(--lt-focus);outline-offset:-2px}
+.lt-map-zoomable.is-zoomed{cursor:grab;touch-action:none}
+.lt-map-frame:has(.lt-map-zoom),.lt-map-frame:has(.lt-map-note){position:relative}
+.lt-map-zoom{position:absolute;top:.6rem;right:.6rem;display:flex;flex-direction:column;gap:.3rem}
+.lt-map-zoom button{display:grid;place-items:center;padding:0;width:2.25rem;height:2.25rem;border:1px solid var(--lt-line-strong);border-radius:var(--lt-radius-md);background:var(--lt-surface);color:var(--lt-fg);cursor:pointer}
+.lt-map-zoom button[hidden]{display:none}
+.lt-map-zoom svg{display:block;pointer-events:none}
+.lt-map-zoom button:focus-visible,.lt-map-switch:focus-visible{outline:var(--lt-focus-width) solid var(--lt-focus);outline-offset:var(--lt-focus-offset)}
+/* A note on the map (what is picked) and the card with details under the pointer */
+.lt-map-note{position:absolute;top:.6rem;left:.6rem;max-width:calc(100% - 4.5rem);margin:0;padding:.35rem .7rem;border:1px solid var(--lt-line-strong);border-radius:var(--lt-radius-md);background:var(--lt-surface);box-shadow:var(--lt-shadow-sm);font-size:.875rem}
+.lt-map-card{position:absolute;z-index:var(--lt-z-popover);max-width:min(22rem,calc(100% - 16px));padding:.6rem .75rem;border:1px solid var(--lt-line-strong);border-radius:var(--lt-radius-md);background:var(--lt-surface);box-shadow:var(--lt-shadow-md);color:var(--lt-fg);font-size:.8125rem;line-height:1.45;pointer-events:none}
+.lt-map-card p{margin:0;overflow-wrap:anywhere}
+.lt-map-card-title{font-weight:650;font-size:.875rem;margin-bottom:.2rem}
+.lt-map-card-label{display:inline-block;min-width:5.5rem;color:var(--lt-muted)}
+.lt-map-card-more{color:var(--lt-muted)}
+/* Switches for what the map and its table show: on is marked, off is faded and struck through */
+.lt-map-switch{display:inline-flex;align-items:center;gap:.4rem;min-height:36px;padding:.35rem .8rem;border:1px solid var(--lt-line-strong);border-radius:var(--lt-radius-md);background:var(--lt-surface);color:var(--lt-fg);font:inherit;font-size:.875rem;cursor:pointer}
+.lt-map-legend .lt-map-switch{min-height:30px;padding:.2rem .6rem;border-radius:var(--lt-radius-pill);font-weight:500}
+.lt-map-switch[aria-pressed="true"]{border-color:var(--lt-accent);box-shadow:inset 0 0 0 1px var(--lt-accent);font-weight:600}
+.lt-map-switch[aria-pressed="false"]{color:var(--lt-muted);border-style:dashed;text-decoration:line-through}
+.lt-map-switch[aria-pressed="false"] .lt-map-kind-mark{opacity:.35}
+
 .lt-map-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.65rem 1rem;padding:.65rem 1rem;background:var(--lt-surface);border-top:1px solid var(--lt-line)}
 .lt-map-legend{display:flex;flex-wrap:wrap;align-items:center;gap:.65rem 1rem;list-style:none;margin:0;padding:0;font-size:.8125rem}
 .lt-map-legend li{margin:0}
@@ -71,5 +119,6 @@
 
 @media(forced-colors:active){
   .lt-map-frame,.lt-map-detail,.lt-chart-card{border-color:CanvasText}
-  .lt-map-svg,.lt-map-swatch,.lt-chart-svg,.lt-chart-swatch{forced-color-adjust:none}
+  .lt-map-svg,.lt-map-swatch,.lt-map-kind-mark,.lt-chart-svg,.lt-chart-swatch{forced-color-adjust:none}
+  .lt-map-switch[aria-pressed="true"]{outline:2px solid Highlight}
 }

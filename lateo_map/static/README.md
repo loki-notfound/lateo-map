@@ -3,16 +3,20 @@
 Copied into the webroot by the site generator (`lateo_map/site.py`).
 
 ## Style
-The pages use the lateo house style, version 0.1.0 of 2026-11-17. Unchanged
+The pages use the lateo house style, version 0.2.0 of 2026-11-18. Unchanged
 copies: `assets/tokens.css`, `assets/site.css` (its stylesheet for content
-sites), `assets/data.css`, `assets/map.css`, the favicons, the
-`map.lateo.dev` lockups and `world-map.svg` (Natural Earth 110m, public
-domain), whose outlines the generator puts into the page. The mark files fall
-outside the repository's licence ([TRADEMARKS.md](../../TRADEMARKS.md)).
+sites), `assets/data.css`, `assets/map.css` (with the markers of the kinds of
+node, the groups with their ring, the switches, the card, the note and the
+zoom buttons), the favicons, the `map.lateo.dev` lockups, `assets/og.png`
+(the picture of a link preview), `world-map.svg` (Natural Earth 110m, public
+domain), whose outlines the generator puts into the page, and
+`assets/world-map-50m.svg` (Natural Earth 50m), which the script fetches when
+a visitor zooms in. The mark files fall outside the repository's licence
+([TRADEMARKS.md](../../TRADEMARKS.md)).
 
-`assets/map-site.css` holds the additions of this site: the markers for the
-kinds of node, the filter controls and the sortable table. To change
-the look, change the house style and copy the new version in.
+`assets/map-site.css` holds only the layout of this one page: the controls
+above the table and the sortable table. To change the look, change the house
+style and copy the new version in.
 
 ## Script
 `assets/map.js` adds the filters for kind and version, search, sorting,

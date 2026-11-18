@@ -199,10 +199,10 @@ ICON = ('<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><pat
         'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>')
 
 SYMBOLS = """<defs>
-<symbol id="m-p2p" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5"/></symbol>
-<symbol id="m-rpc" viewBox="0 0 16 16"><path d="M8 2L14 8L8 14L2 8Z"/></symbol>
-<symbol id="m-both" viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" rx="1.5"/></symbol>
-<symbol id="m-private" viewBox="0 0 16 16"><path d="M8 2.5L14 13H2Z"/></symbol>
+<symbol id="lt-marker-p2p" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5"/></symbol>
+<symbol id="lt-marker-rpc" viewBox="0 0 16 16"><path d="M8 2L14 8L8 14L2 8Z"/></symbol>
+<symbol id="lt-marker-both" viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" rx="1.5"/></symbol>
+<symbol id="lt-marker-private" viewBox="0 0 16 16"><path d="M8 2.5L14 13H2Z"/></symbol>
 </defs>"""
 
 
@@ -213,18 +213,18 @@ def _marker(group):
     if len(members) == 1:
         title = title_of(first)
         state = " is-offline" if first["status"] == "offline" else ""
-        shape = (f'<use class="mk mk-{first["kind"]}{state}" href="#m-{first["kind"]}" '
+        shape = (f'<use class="lt-map-kind lt-map-kind-{first["kind"]}{state}" href="#lt-marker-{first["kind"]}" '
                  f'x="{x - 8}" y="{y - 8}" width="16" height="16"/>')
     else:
         places = sorted({place_name(n) for n in members})
         where = places[0] if len(places) == 1 else f"{places[0]} and nearby"
         title = f"{len(members)} nodes · {where}"
-        shape = (f'<circle class="mk-cluster" cx="{x}" cy="{y}" r="{radius(len(members)):.1f}"/>'
-                 f'<text class="mk-cluster-text" x="{x}" y="{y}">{len(members)}</text>')
+        shape = (f'<circle class="lt-map-group" cx="{x}" cy="{y}" r="{radius(len(members)):.1f}"/>'
+                 f'<text class="lt-map-group-text" x="{x}" y="{y}">{len(members)}</text>')
     ids = " ".join(row_id(n) for n in members)
     return (f'<a class="lt-map-marker" href="#{row_id(first)}" data-rows="{e(ids)}" '
             f'aria-label="{e(title)}"><title>{e(title)}</title>'
-            f'<circle class="mk-hit" cx="{x}" cy="{y}" r="12"/>{shape}</a>')
+            f'<circle class="lt-map-hit" cx="{x}" cy="{y}" r="12"/>{shape}</a>')
 
 
 def _row(node):
@@ -253,9 +253,9 @@ def _row(node):
         f'data-release="{e(node["release"] or "")}" data-place="{e(place_name(node))}" '
         f'data-title="{e(title_of(node))}"{spot}>'
         f'<td>{address}</td>'
-        f'<td><span class="kind kind-{node["kind"]}"><svg class="kind-mark" viewBox="0 0 16 16" '
-        f'width="14" height="14" aria-hidden="true"><use class="mk mk-{node["kind"]}" '
-        f'href="#m-{node["kind"]}"/></svg>{e(label)}</span></td>'
+        f'<td><span class="kind kind-{node["kind"]}"><svg class="lt-map-kind-mark" viewBox="0 0 16 16" '
+        f'width="14" height="14" aria-hidden="true"><use class="lt-map-kind lt-map-kind-{node["kind"]}" '
+        f'href="#lt-marker-{node["kind"]}"/></svg>{e(label)}</span></td>'
         f'<td>{e(", ".join(ports))}</td>'
         f'<td data-sort="{e((node["country_name"] or "~") + " " + (node["city"] or ""))}">{e(place_name(node))}</td>'
         f'<td>{network}</td>'
@@ -289,11 +289,28 @@ HIDDEN_NOTE = """<li><strong>Private nodes</strong> connect out but accept no co
 
 
 def _mark(kind, extra=""):
-    return (f'<svg class="kind-mark" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">'
-            f'<use class="mk mk-{kind}{extra}" href="#m-{kind}"/></svg>')
+    return (f'<svg class="lt-map-kind-mark" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">'
+            f'<use class="lt-map-kind lt-map-kind-{kind}{extra}" href="#lt-marker-{kind}"/></svg>')
 
 
-def render(nodes, now, hidden=None):
+def _preview(site_url, summary):
+    """What a messenger or a search engine shows for a link to the page."""
+    if not site_url:
+        return ""
+    base = site_url.rstrip("/")
+    return f"""<meta property="og:type" content="website">
+<meta property="og:site_name" content="lateo">
+<meta property="og:title" content="Zephyr node map">
+<meta property="og:description" content="{e(summary)}">
+<meta property="og:url" content="{e(base)}/">
+<meta property="og:image" content="{e(base)}{asset("og.png")}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+"""
+
+
+def render(nodes, now, hidden=None, site_url=""):
     """`nodes` are the public nodes; `hidden` the private ones (not reachable
     from outside), or None when they are not counted."""
     c = counts(nodes)
@@ -319,7 +336,7 @@ def render(nodes, now, hidden=None):
         f'<li data-filter="kind" data-value="{k}"><span class="lt-map-legend-item">'
         f'{_mark(k)}{e(KINDS[k])}</span></li>' for k in kinds)
     filters = "".join(
-        f'<button type="button" class="filter" data-filter="kind" data-value="{k}" '
+        f'<button type="button" class="lt-map-switch" data-filter="kind" data-value="{k}" '
         f'aria-pressed="{"false" if k == "private" else "true"}">{_mark(k)}{e(KINDS[k])}</button>'
         for k in kinds)
     versions = sorted({n["release"] for n in everything if n["release"]}, reverse=True)
@@ -344,7 +361,7 @@ def render(nodes, now, hidden=None):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>map.lateo.dev · Zephyr node map</title>
 <meta name="description" content="{summary}">
-<link rel="stylesheet" href="{asset("tokens.css")}">
+{_preview(site_url, summary)}<link rel="stylesheet" href="{asset("tokens.css")}">
 <link rel="stylesheet" href="{asset("site.css")}">
 <link rel="stylesheet" href="{asset("data.css")}">
 <link rel="stylesheet" href="{asset("map.css")}">
@@ -379,7 +396,7 @@ def render(nodes, now, hidden=None):
 
   <section id="map" aria-label="Map">
     <div class="lt-map-frame">
-      <svg class="lt-map-canvas" viewBox="{VIEW}" role="group" aria-label="World map with {len(everything)} Zephyr nodes">
+      <svg class="lt-map-canvas lt-map-zoomable" viewBox="{VIEW}" data-detail="{asset("world-map-50m.svg")}" role="group" aria-label="World map with {len(everything)} Zephyr nodes">
         {SYMBOLS}
         <rect class="lt-map-water" width="{WIDTH}" height="{HEIGHT}"/>
         <path class="lt-map-graticule" d="{paths["graticule"]}"/>
@@ -389,19 +406,19 @@ def render(nodes, now, hidden=None):
 {markers}
         </g>
       </svg>
-      <div class="zoom" hidden>
+      <div class="lt-map-zoom" hidden>
         <button type="button" data-zoom="in" aria-label="Zoom in" title="Zoom in">{ICON % "M8 3v10M3 8h10"}</button>
         <button type="button" data-zoom="out" aria-label="Zoom out" title="Zoom out">{ICON % "M3 8h10"}</button>
         <button type="button" data-zoom="reset" aria-label="Show the whole world" title="Whole world">{ICON % "M3 6V3h3M10 3h3v3M13 10v3h-3M6 13H3v-3"}</button>
         <button type="button" data-zoom="clear" aria-label="Let go of the picked nodes" title="Let go of the picked nodes" hidden>{ICON % "M4 4l8 8M12 4l-8 8"}</button>
       </div>
-      <p id="tip" class="map-pick" role="status" hidden></p>
-      <div id="hover" class="map-tip" hidden></div>
+      <p id="tip" class="lt-map-note" role="status" hidden></p>
+      <div id="hover" class="lt-map-card" hidden></div>
       <div class="lt-map-toolbar">
         <ul class="lt-map-legend" id="legend" aria-label="Legend">
           {legend}
           <li><span class="lt-map-legend-item">{_mark("p2p", " is-offline")}Hollow: not answering now</span></li>
-          <li><span class="lt-map-legend-item"><span class="cluster-swatch" aria-hidden="true">3</span>Several nodes close together</span></li>
+          <li><span class="lt-map-legend-item"><span class="lt-map-group-swatch" aria-hidden="true">3</span>Several nodes close together</span></li>
         </ul>
         <span class="lt-muted lt-compact">Places are approximate.<span id="legend-hint" hidden> Click a kind to show or hide it. Zoom with the buttons, a double click, or Ctrl and the wheel.</span></span>
       </div>
@@ -520,5 +537,5 @@ def build(db, config, now=None):
     nodes = load_nodes(db, config)
     hidden = load_hidden(db, config, now)
     _write(os.path.join(out, "nodes.json"), json.dumps(data(nodes, now, hidden), indent=1) + "\n")
-    _write(os.path.join(out, "index.html"), render(nodes, now, hidden))
+    _write(os.path.join(out, "index.html"), render(nodes, now, hidden, config.site_url))
     return len(nodes)
