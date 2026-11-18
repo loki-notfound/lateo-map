@@ -184,6 +184,13 @@ class SiteTest(unittest.TestCase):
         self.assertEqual(site.asset("map.js"), site.asset("map.js"))
         self.assertNotEqual(site.asset("map.js").split("=")[1], site.asset("site.css").split("=")[1])
 
+    def test_map_has_no_heading_but_keeps_a_name(self):
+        page = self.page()
+        self.assertNotIn(">Map</h2>", page)
+        self.assertIn('<section id="map" aria-label="Map">', page)
+        self.assertIn('<div id="hover" class="map-tip" hidden></div>', page)
+        self.assertIn('data-zoom="clear"', page)
+
     def test_empty_map(self):
         page = self.page()
         self.assertIn("0 public nodes, 0 answering", page)

@@ -18,6 +18,9 @@
   var reset = document.getElementById("reset");
   var shown = document.getElementById("shown");
   var tip = document.getElementById("tip");
+  var card = document.getElementById("hover");
+  var frame = document.querySelector(".lt-map-frame");
+  var clear = document.querySelector("[data-zoom=clear]");
   // The legend under the map becomes a row of switches: what is switched on
   // is what the map and the table show. The buttons at the table are the same
   // switches again.
@@ -75,6 +78,7 @@
     });
     shown.textContent = count === rows.length ? "" : count + " of " + rows.length + " shown";
     reset.hidden = isDefault() && !picked && !search.value.trim();
+    showPicked();
     draw();
   }
 
@@ -97,6 +101,25 @@
   });
 
   // Sorting: a click on a column heading, a second click reverses.
+  var sorted = null;      // { index, down } once a heading was clicked
+
+  function sortRows() {
+    if (!sorted) return;
+    var index = sorted.index, down = sorted.down;
+    function key(row) {
+      var td = row.cells[index];
+      var value = td.dataset.sort !== undefined ? td.dataset.sort : td.textContent.trim();
+      var number = Number(value);
+      return value !== "" && !isNaN(number) ? number : value.toLowerCase();
+    }
+    rows.sort(function (a, b) {
+      var x = key(a), y = key(b);
+      if (typeof x !== typeof y) { x = String(x); y = String(y); }
+      return (x < y ? -1 : x > y ? 1 : 0) * (down ? -1 : 1);
+    });
+    rows.forEach(function (row) { body.appendChild(row); });
+  }
+
   Array.prototype.forEach.call(table.tHead.rows[0].cells, function (cell, index) {
     var button = document.createElement("button");
     button.type = "button";
@@ -109,18 +132,8 @@
         other.removeAttribute("aria-sort");
       });
       cell.setAttribute("aria-sort", down ? "descending" : "ascending");
-      function key(row) {
-        var td = row.cells[index];
-        var value = td.dataset.sort !== undefined ? td.dataset.sort : td.textContent.trim();
-        var number = Number(value);
-        return value !== "" && !isNaN(number) ? number : value.toLowerCase();
-      }
-      rows.sort(function (a, b) {
-        var x = key(a), y = key(b);
-        if (typeof x !== typeof y) { x = String(x); y = String(y); }
-        return (x < y ? -1 : x > y ? 1 : 0) * (down ? -1 : 1);
-      });
-      rows.forEach(function (row) { body.appendChild(row); });
+      sorted = { index: index, down: down };
+      sortRows();
     });
   });
 
@@ -170,9 +183,80 @@
     return groups.sort(function (p, q) { return q.rows.length - p.rows.length; });
   }
 
-  function say(text) {
-    tip.textContent = text;
-    tip.hidden = false;
+  // ---- what a marker tells ---------------------------------------------------
+
+  function cell(row, index) { return row.cells[index].textContent.trim(); }
+
+  function line(parent, name, value, className) {
+    if (!value) return;
+    var p = document.createElement("p");
+    if (className) p.className = className;
+    if (name) {
+      var label = document.createElement("span");
+      label.className = "map-tip-label";
+      label.textContent = name;
+      p.appendChild(label);
+    }
+    p.appendChild(document.createTextNode(value));
+    parent.appendChild(p);
+  }
+
+  // Everything the table has about the nodes of one marker, as a small card.
+  function fill(group, label) {
+    while (card.firstChild) card.removeChild(card.firstChild);
+    if (group.length === 1) {
+      var row = group[0];
+      line(card, "", row.dataset.kind === "private" ? "Private node" : cell(row, 0), "map-tip-title");
+      line(card, "Kind", cell(row, 1));
+      line(card, "Ports", cell(row, 2));
+      line(card, "Place", cell(row, 3));
+      line(card, "Network", cell(row, 4));
+      line(card, "Version", cell(row, 5));
+      line(card, "Height", cell(row, 6));
+      line(card, "Status", cell(row, 7));
+      line(card, "Last answer", cell(row, 8));
+    } else {
+      line(card, "", label, "map-tip-title");
+      group.slice(0, 8).forEach(function (row) {
+        var name = row.dataset.kind === "private" ? "Private node" : cell(row, 0);
+        line(card, "", [name, cell(row, 1), cell(row, 5), cell(row, 7)].filter(Boolean).join(" · "));
+      });
+      if (group.length > 8) line(card, "", "and " + (group.length - 8) + " more", "map-tip-more");
+      line(card, "", "Click to list them in the table.", "map-tip-more");
+    }
+  }
+
+  function showCard(group, label, x, y) {
+    fill(group, label);
+    card.hidden = false;
+    var box = frame.getBoundingClientRect();
+    var left = x - box.left + 14, top = y - box.top + 14;
+    if (left + card.offsetWidth > box.width - 8) left = x - box.left - card.offsetWidth - 14;
+    if (top + card.offsetHeight > box.height - 8) top = y - box.top - card.offsetHeight - 14;
+    card.style.left = Math.max(8, left) + "px";
+    card.style.top = Math.max(8, top) + "px";
+  }
+
+  function hideCard() { card.hidden = true; }
+
+  // The line under the map says what is picked, with the way to the table.
+  function showPicked() {
+    while (tip.firstChild) tip.removeChild(tip.firstChild);
+    tip.hidden = !picked;
+    if (clear) clear.hidden = !picked;
+    if (!picked) return;
+    var count = picked.length;
+    tip.appendChild(document.createTextNode(
+      (count === 1 ? "1 node" : count + " nodes") + " picked. "));
+    var link = document.createElement("a");
+    link.href = "#nodes";
+    link.textContent = count === 1 ? "See it in the table" : "See them in the table";
+    tip.appendChild(link);
+    tip.appendChild(document.createTextNode(". Click the marker again to let go."));
+  }
+
+  function same(a, b) {
+    return !!a && !!b && a.length === b.length && a.every(function (id, i) { return id === b[i]; });
   }
 
   function draw() {
@@ -184,6 +268,7 @@
       }
     });
     while (layer.firstChild) layer.removeChild(layer.firstChild);
+    hideCard();
     groupsOf(points, unit).forEach(function (group) {
       var first = group.rows[0], count = group.rows.length;
       var ids = group.rows.map(function (row) { return row.id; });
@@ -200,7 +285,8 @@
       var title = el("title");
       title.textContent = label;
       link.appendChild(title);
-      link.appendChild(el("circle", { "class": "mk-hit", cx: group.x, cy: group.y, r: 12 * unit }));
+      link.appendChild(el("circle", { "class": "mk-hit", cx: group.x, cy: group.y,
+                                       r: (size(count) + 5) * unit }));
       if (count === 1) {
         var kind = first.dataset.kind;
         link.appendChild(el("use", {
@@ -216,18 +302,25 @@
         text.textContent = count;
         link.appendChild(text);
       }
-      if (picked && picked[0] === ids[0] && picked.length === ids.length) {
-        link.classList.add("is-selected");
-      }
-      link.addEventListener("pointerenter", function () { say(label); });
-      link.addEventListener("focus", function () { say(label); });
+      if (same(picked, ids)) link.classList.add("is-selected");
+      link.addEventListener("pointerenter", function (event) {
+        showCard(group.rows, label, event.clientX, event.clientY);
+      });
+      link.addEventListener("pointermove", function (event) {
+        if (!card.hidden) showCard(group.rows, label, event.clientX, event.clientY);
+      });
+      link.addEventListener("pointerleave", hideCard);
+      link.addEventListener("focus", function () {
+        var box = link.getBoundingClientRect();
+        showCard(group.rows, label, box.right, box.bottom);
+      });
+      link.addEventListener("blur", hideCard);
       link.addEventListener("click", function (event) {
         event.preventDefault();
         if (moved) return;
-        picked = ids;
+        // a second click on the same marker lets go of it
+        picked = same(picked, ids) ? null : ids;
         apply();
-        say(label);
-        document.getElementById("nodes").scrollIntoView({ block: "start" });
       });
       layer.appendChild(link);
     });
@@ -265,10 +358,12 @@
 
   if (zoomBox) {
     zoomBox.addEventListener("click", function (event) {
-      var action = event.target.dataset ? event.target.dataset.zoom : null;
+      var button = event.target.closest ? event.target.closest("button") : null;
+      var action = button ? button.dataset.zoom : null;
       if (action === "in") zoomAt(2);
       if (action === "out") zoomAt(0.5);
       if (action === "reset") setView(WORLD[0], WORLD[1], WORLD[2]);
+      if (action === "clear") { picked = null; apply(); }
     });
   }
 
@@ -338,6 +433,61 @@
       keys[event.key]();
     }
   });
+
+  // ---- staying current -----------------------------------------------------
+  // The site is written anew every five minutes. An open page fetches itself
+  // at that pace and takes over the numbers and the rows, keeping the
+  // switches, the search, the order, the pick and the view as they are. When
+  // the page itself changed (other switches, a new script) it reloads.
+
+  var REFRESH = 5 * 60 * 1000;
+  var fetched = Date.now();
+
+  function signature(doc) {
+    var parts = [];
+    Array.prototype.forEach.call(doc.querySelectorAll(".controls .filter, script[src]"), function (node) {
+      parts.push(node.getAttribute("src") || node.dataset.filter + "=" + node.dataset.value);
+    });
+    return parts.join("|");
+  }
+
+  function takeOver(doc) {
+    if (signature(doc) !== signature(document)) { location.reload(); return; }
+    [".lt-stat-grid", ".lead", "#nodes-caption"].forEach(function (selector) {
+      var fresh = doc.querySelector(selector), old = document.querySelector(selector);
+      if (!fresh || !old) return;
+      while (old.firstChild) old.removeChild(old.firstChild);
+      Array.prototype.forEach.call(fresh.childNodes, function (node) {
+        old.appendChild(document.importNode(node, true));
+      });
+    });
+    var freshBody = doc.querySelector("#node-table tbody");
+    if (!freshBody) return;
+    while (body.firstChild) body.removeChild(body.firstChild);
+    rows = Array.prototype.map.call(freshBody.rows, function (row) {
+      return body.appendChild(document.importNode(row, true));
+    });
+    if (picked) {
+      picked = picked.filter(function (id) { return document.getElementById(id); });
+      if (!picked.length) picked = null;
+    }
+    sortRows();
+    apply();
+  }
+
+  function refresh() {
+    if (document.hidden || Date.now() - fetched < REFRESH - 5000) return;
+    fetched = Date.now();
+    fetch(location.pathname, { cache: "no-store", credentials: "omit" })
+      .then(function (response) { return response.ok ? response.text() : null; })
+      .then(function (text) {
+        if (text) takeOver(new DOMParser().parseFromString(text, "text/html"));
+      })
+      .catch(function () { /* the next round tries again */ });
+  }
+
+  setInterval(refresh, REFRESH);
+  document.addEventListener("visibilitychange", refresh);
 
   showSwitches();
   apply();

@@ -18,7 +18,8 @@ the look, change the house style and copy the new version in.
 `assets/map.js` adds the filters for kind and version, search, sorting,
 zooming and moving the map, and the link from a marker to its rows. It draws
 the markers itself, so that they follow the filters and come apart when the
-map is zoomed in. The page shows everything without it.
+map is zoomed in. Every five minutes an open page fetches itself and takes
+over the new numbers and rows. The page shows everything without it.
 
 ## Headers
 `.htaccess` sets the Content Security Policy and the other security headers.

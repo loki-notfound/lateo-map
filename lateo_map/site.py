@@ -34,7 +34,7 @@ KINDS = {  # key: label
 }
 
 HEADERS = (
-    "default-src 'none'; style-src 'self'; img-src 'self'; script-src 'self'; "
+    "default-src 'none'; style-src 'self'; img-src 'self'; script-src 'self'; connect-src 'self'; "
     "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 )
 
@@ -194,6 +194,10 @@ def _map_paths():
         paths[name] = found.group(1) if found else ""
     return paths
 
+
+# the drawing inside a button at the map: its middle is the middle of the button
+ICON = ('<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="%s" fill="none" '
+        'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>')
 
 SYMBOLS = """<defs>
 <symbol id="m-p2p" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5"/></symbol>
@@ -373,8 +377,7 @@ def render(nodes, now, hidden=None):
 
   <div class="lt-stat-grid">{tiles}</div>
 
-  <section id="map" aria-labelledby="map-title">
-    <h2 id="map-title">Map</h2>
+  <section id="map" aria-label="Map">
     <div class="lt-map-frame">
       <svg class="lt-map-canvas" viewBox="{VIEW}" role="group" aria-labelledby="map-svg-title">
         <title id="map-svg-title">World map with {len(everything)} Zephyr nodes</title>
@@ -388,10 +391,12 @@ def render(nodes, now, hidden=None):
         </g>
       </svg>
       <div class="zoom" hidden>
-        <button type="button" data-zoom="in" aria-label="Zoom in" title="Zoom in">+</button>
-        <button type="button" data-zoom="out" aria-label="Zoom out" title="Zoom out">&minus;</button>
-        <button type="button" data-zoom="reset" aria-label="Show the whole world" title="Whole world">&#x21ba;</button>
+        <button type="button" data-zoom="in" aria-label="Zoom in" title="Zoom in">{ICON % "M8 3v10M3 8h10"}</button>
+        <button type="button" data-zoom="out" aria-label="Zoom out" title="Zoom out">{ICON % "M3 8h10"}</button>
+        <button type="button" data-zoom="reset" aria-label="Show the whole world" title="Whole world">{ICON % "M3 6V3h3M10 3h3v3M13 10v3h-3M6 13H3v-3"}</button>
+        <button type="button" data-zoom="clear" aria-label="Let go of the picked nodes" title="Let go of the picked nodes" hidden>{ICON % "M4 4l8 8M12 4l-8 8"}</button>
       </div>
+      <div id="hover" class="map-tip" hidden></div>
       <div class="lt-map-toolbar">
         <ul class="lt-map-legend" id="legend" aria-label="Legend">
           {legend}
