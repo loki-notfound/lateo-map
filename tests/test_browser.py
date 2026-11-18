@@ -85,6 +85,11 @@ SCENARIOS = {
     "old_page": """play(function () { report({ shown: shown(), markers: markers(),
         controls: !document.querySelector('.controls').hidden }); });""",
     "stale": """play(function () { report({ stale: !document.getElementById('stale').hidden }); });""",
+    "phone": """play(function () {
+        var frame = document.querySelector('.lt-map-frame'), svg = document.querySelector('.lt-map-canvas');
+        report({ screen: window.innerWidth, frame: frame.clientWidth, scroll: frame.scrollWidth,
+                 map: Math.round(svg.getBoundingClientRect().width),
+                 page: document.documentElement.scrollWidth, markers: markers() }); });""",
 }
 
 
@@ -178,11 +183,12 @@ class BrowserTest(unittest.TestCase):
         cls.server.server_close()
         cls.dir.cleanup()
 
-    def play(self, name):
+    def play(self, name, size="1280,900"):
         with tempfile.TemporaryDirectory() as profile:
             done = subprocess.run(
                 [CHROME, "--headless=new", "--no-sandbox", "--disable-gpu", "--enable-logging=stderr",
-                 "--v=0", f"--user-data-dir={profile}", "--virtual-time-budget=6000", "--dump-dom",
+                 "--v=0", f"--user-data-dir={profile}", f"--window-size={size}",
+                 "--virtual-time-budget=6000", "--dump-dom",
                  f"http://127.0.0.1:{self.port}/run/{name}"],
                 capture_output=True, text=True, timeout=120)
         problems = [line for line in done.stderr.splitlines()
@@ -246,6 +252,14 @@ class BrowserTest(unittest.TestCase):
         self.assertEqual(r["shown"], 7)
         self.assertGreaterEqual(r["markers"], 4)
         self.assertTrue(r["controls"])
+
+    def test_on_a_phone_the_map_fits_and_nothing_scrolls_sideways(self):
+        r = self.play("phone", "390,800")
+        self.assertLessEqual(r["screen"], 500)
+        self.assertLessEqual(r["scroll"], r["frame"])       # the frame does not scroll
+        self.assertLessEqual(r["map"], r["frame"])          # the map is as wide as its frame
+        self.assertLessEqual(r["page"], r["screen"])        # and neither does the page
+        self.assertGreater(r["markers"], 0)
 
     def test_old_numbers_are_called_old(self):
         self.assertTrue(self.play("stale")["stale"])

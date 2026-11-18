@@ -275,7 +275,9 @@
   }
 
   function draw() {
-    var unit = view[2] / WORLD[2];    // map units per unit of the unzoomed map
+    // Map units per pixel on the screen: markers keep one size for the eye,
+    // on a wide screen and on a phone, zoomed or not.
+    var unit = view[2] / (svg.getBoundingClientRect().width || WORLD[2]);
     var points = [];
     rows.forEach(function (row) {
       if (row.dataset.x && matches(row, false)) {
@@ -470,6 +472,19 @@
   }
   svg.addEventListener("pointerup", release);
   svg.addEventListener("pointercancel", release);
+
+  // a turned phone or a resized window: the markers are sized anew
+  var resized = null;
+  window.addEventListener("resize", function () {
+    clearTimeout(resized);
+    resized = setTimeout(draw, 150);
+  });
+
+  // on a touch screen the hint speaks of fingers, not of a mouse
+  var hint = document.getElementById("legend-hint");
+  if (hint && window.matchMedia && window.matchMedia("(pointer: coarse)").matches) {
+    hint.textContent = " Tap a kind to show or hide it. Zoom with the buttons or with two fingers.";
+  }
 
   svg.setAttribute("tabindex", "0");
   svg.addEventListener("keydown", function (event) {

@@ -15,12 +15,14 @@ header.site .name img { display: block; }
 
 .lt-map-canvas { max-height: 80vh; }
 
-/* Narrow screens: the map keeps a readable size and scrolls sideways in its frame;
-   the numbers stand two by two. */
+/* Narrow screens: the numbers stand two by two. The map fits the screen; it
+   is zoomed and moved with the fingers, so its frame does not scroll. */
 @media (max-width: 40rem) {
-  .lt-map-frame { overflow-x: auto; }
-  .lt-map-canvas { width: 44rem; max-width: none; }
   .lt-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* the buttons in a row, so that they do not cover the low map from top to bottom */
+  .lt-map-zoom { flex-direction: row; top: .4rem; right: .4rem; }
+  .lt-map-zoom button { width: 2rem; height: 2rem; }
+  .lt-map-note { top: auto; bottom: .4rem; left: .4rem; max-width: calc(100% - .8rem); }
 }
 
 /* the kind beside its mark, in a table cell */
