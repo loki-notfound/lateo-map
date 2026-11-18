@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS private_nodes (     -- see own.py; no address in here
     lat          REAL,
     lon          REAL,
     asn          INTEGER,
-    network      TEXT
+    network      TEXT,
+    probed       INTEGER NOT NULL DEFAULT 0    -- when it was last tried from outside
 ) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS daily (             -- the highest count of each day
     day    TEXT NOT NULL,                      -- YYYY-MM-DD, UTC
@@ -68,7 +69,7 @@ CREATE TABLE IF NOT EXISTS daily (             -- the highest count of each day
     PRIMARY KEY (day, metric, key)
 ) WITHOUT ROWID;
 """
-SCHEMA_VERSION = "3"
+SCHEMA_VERSION = "4"
 
 # from one schema version to the next
 MIGRATIONS = {
@@ -88,7 +89,21 @@ MIGRATIONS = {
     "2": """
         DELETE FROM meta WHERE key IN ('unreachable_nodes', 'unreachable');
     """,
+    # private_nodes gains the column `probed`; see _add_missing_columns
+    "3": "",
 }
+
+# Columns added to a table that SCHEMA creates. A database from before the
+# table existed gets the whole table from SCHEMA; one that has the table in
+# its older form gets the column here.
+ADDED_COLUMNS = (("private_nodes", "probed", "INTEGER NOT NULL DEFAULT 0"),)
+
+
+def _add_missing_columns(db):
+    for table, column, kind in ADDED_COLUMNS:
+        have = {row["name"] for row in db.execute(f"PRAGMA table_info({table})")}
+        if column not in have:
+            db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")
 
 
 def connect(path):
@@ -99,6 +114,7 @@ def connect(path):
     db.executescript(SCHEMA)
     db.execute("INSERT OR IGNORE INTO meta VALUES ('schema', ?)", (SCHEMA_VERSION,))
     found = get_meta(db, "schema")
+    _add_missing_columns(db)
     while found in MIGRATIONS:
         db.executescript("BEGIN;" + MIGRATIONS[found] + "COMMIT;")
         found = str(int(found) + 1)
@@ -205,14 +221,22 @@ def set_place(db, ip, place, version):
                 place.lon, place.asn, place.network, version, ip))
 
 
-def see_private(db, tag, now, height, place):
+def see_private(db, tag, now, height, place, probed=None):
+    """Note a private node. `probed` is given when it was just tried from
+    outside; otherwise the time of the last try is kept."""
     db.execute(
-        "INSERT INTO private_nodes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (tag) DO UPDATE SET"
+        "INSERT INTO private_nodes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (tag) DO UPDATE SET"
         " last_seen = excluded.last_seen, height = excluded.height, country = excluded.country,"
         " country_name = excluded.country_name, city = excluded.city, lat = excluded.lat,"
-        " lon = excluded.lon, asn = excluded.asn, network = excluded.network",
+        " lon = excluded.lon, asn = excluded.asn, network = excluded.network,"
+        " probed = CASE WHEN excluded.probed > 0 THEN excluded.probed ELSE probed END",
         (tag, now, height, place.country, place.country_name, place.city, place.lat, place.lon,
-         place.asn, place.network))
+         place.asn, place.network, probed or 0))
+
+
+def private_probed(db, tag):
+    row = db.execute("SELECT probed FROM private_nodes WHERE tag = ?", (tag,)).fetchone()
+    return row["probed"] if row else 0
 
 
 def forget_private(db, tag):

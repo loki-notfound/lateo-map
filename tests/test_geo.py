@@ -189,6 +189,21 @@ class MigrationTest(Files):
         self.assertIsNone(store.get_meta(database, "unreachable_nodes"))
         self.assertEqual(database.execute("SELECT count(*) FROM private_nodes").fetchone()[0], 0)
 
+    def test_schema_three_gains_the_column_for_the_daily_try(self):
+        path = os.path.join(self.dir.name, "three.sqlite")
+        database = store.connect(path)
+        database.execute("DROP TABLE private_nodes")
+        database.execute("CREATE TABLE private_nodes (tag TEXT PRIMARY KEY, last_seen INTEGER NOT NULL,"
+                         " height INTEGER, country TEXT, country_name TEXT, city TEXT, lat REAL, lon REAL,"
+                         " asn INTEGER, network TEXT) WITHOUT ROWID")
+        database.execute("INSERT INTO private_nodes (tag, last_seen) VALUES ('t', 5)")
+        store.set_meta(database, "schema", "3")
+        database.close()
+        database = store.connect(path)
+        self.addCleanup(database.close)
+        self.assertEqual(store.get_meta(database, "schema"), store.SCHEMA_VERSION)
+        self.assertEqual(tuple(database.execute("SELECT tag, probed FROM private_nodes").fetchone()), ("t", 0))
+
     def test_schema_one_is_brought_up_to_date(self):
         import sqlite3
         path = os.path.join(self.dir.name, "old.sqlite")

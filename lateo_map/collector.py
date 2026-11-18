@@ -248,6 +248,23 @@ def _private_key(db, now):
     return bytes.fromhex(store.get_meta(db, "private_key"))
 
 
+def _answers(ip, rpc_port, config, probes):
+    """Does this address answer from outside, on the usual P2P port or on its
+    RPC port (the one it announces, else the usual ones)?"""
+    try:
+        probes.handshake(ip, P2P_PORT, config.p2p_timeout)
+        return True
+    except (p2p.HandshakeError, OSError):
+        pass
+    for port in dict.fromkeys(p for p in (rpc_port, *config.usual_rpc_ports) if p):
+        try:
+            probes.get_version(ip, port, config.rpc_timeout)
+            return True
+        except rpc.RpcError:
+            pass
+    return False
+
+
 def count_unreachable(db, config, probes, now, data=None):
     """Find the private nodes: peers that stay connected to the operator's
     own nodes, follow the chain, and are not on the map. Per node its place,
@@ -262,8 +279,9 @@ def count_unreachable(db, config, probes, now, data=None):
         try:
             peers = probes.inbound_peers(host, port, config.rpc_timeout,
                                          config.private_min_seconds, config.private_max_behind)
-            for ip, height in peers.items():
-                seen[ip] = max(seen.get(ip, 0), height)
+            for ip, (height, rpc_port) in peers.items():
+                known = seen.get(ip, (0, 0))
+                seen[ip] = (max(known[0], height), rpc_port or known[1])
             answered += 1
         except rpc.RpcError:
             pass
@@ -287,11 +305,23 @@ def count_unreachable(db, config, probes, now, data=None):
                 continue
             if ip in untried:
                 continue
+            height, rpc_port = seen[ip]
+            probed = None
+            if now - store.private_probed(db, tag) >= config.private_probe_every:
+                # Private is tested, not assumed: does it answer from outside?
+                if _answers(ip, rpc_port, config, probes):
+                    # a public node after all: it joins the addresses that are
+                    # checked, due at once, and is no longer counted here
+                    store.forget_private(db, tag)
+                    store.hear(db, ip, P2P_PORT, rpc_port, now, now, True)
+                    db.execute("UPDATE nodes SET next_check = ? WHERE ip = ?", (now, ip))
+                    continue
+                probed = now
             try:
                 place = data.place(ip) if data is not None else geo.Place()
             except (ValueError, mmdb.FormatError):
                 place = geo.Place()
-            store.see_private(db, tag, now, seen[ip] or None, place)
+            store.see_private(db, tag, now, height or None, place, probed)
     finally:
         if own_data and data is not None:
             data.close()

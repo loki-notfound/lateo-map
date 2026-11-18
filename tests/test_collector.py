@@ -42,7 +42,8 @@ class Net:
         self.calls.append(("inbound", host, port))
         if (host, port) not in self.inbound:
             raise rpc.RpcError("refused")
-        return dict(self.inbound[(host, port)])
+        return {ip: value if isinstance(value, tuple) else (value, 0)
+                for ip, value in self.inbound[(host, port)].items()}
 
     def resolve(self, name):
         if name not in self.names:
@@ -211,6 +212,34 @@ class CollectorTest(unittest.TestCase):
         self.now = self.node(A)["next_check"]
         self.run_once()                               # now it answers: public
         self.assertEqual(len(self.private()), 0)
+
+    def test_a_private_node_is_tried_from_outside_once_a_day_and_promoted_when_it_answers(self):
+        self.net.p2p[A] = hs()
+        self.cfg.own_nodes = ["10.0.0.5:17769"]
+        self.net.inbound[("10.0.0.5", 17769)] = {B: (900, 18089), C: 900}
+        self.run_once()
+        self.assertEqual(len(self.private()), 2)
+        # both were tried: the handshake, then RPC on the announced or the usual port
+        self.assertIn(("p2p", B, 17766), self.net.calls)
+        self.assertIn(("version", B, 18089), self.net.calls)
+        self.assertIn(("version", C, 17767), self.net.calls)
+        for _ in range(3):                           # not again within the day
+            self.net.calls.clear()
+            self.now += 300
+            self.run_once()
+            self.assertEqual([c for c in self.net.calls if c[1] in (B, C)], [])
+        # C opens its port: at the next daily try it answers and becomes public
+        self.net.p2p[C] = hs()
+        self.net.calls.clear()
+        self.now += 86400
+        self.run_once()
+        self.assertIsNotNone(self.node(C))
+        self.assertEqual(self.node(C)["next_check"], int(self.now))     # due at once
+        self.now += 300
+        self.run_once()
+        self.assertEqual((self.node(C)["on_map"], self.node(C)["has_p2p"]), (1, 1))
+        self.assertIsNone(self.node(B))              # still private, still without an address kept
+        self.assertEqual(len(self.private()), 1)
 
     def test_fingerprints_get_a_new_key_every_day(self):
         self.net.p2p[A] = hs()

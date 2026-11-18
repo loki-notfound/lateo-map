@@ -18,6 +18,11 @@ Whoever holds the database and the key of the day could try every address
 against a fingerprint; the operator sees these addresses on their own nodes
 anyway. What is kept per node beside that is its place at city level, its
 network operator and its height.
+
+Private is tested, not assumed: once a day the collector tries the usual P2P
+port and the RPC port of such a peer. One that answers is a public node after
+all; it joins the addresses the collector checks and goes onto the map like
+any other, and it is no longer counted here.
 """
 
 from . import rpc
@@ -28,7 +33,7 @@ MAX_CONNECTIONS = 5000
 
 def inbound_peers(host, port, timeout=6.0, min_seconds=180, max_behind=20):
     """The peers connected to this node from outside that behave like a
-    node: {public address: height}.
+    node: {public address: (height, the RPC port it announces or 0)}.
 
     A crawler (the collector of a map is one) connects, shakes hands and
     leaves, and reports no height. A node stays and follows the chain. So a
@@ -59,5 +64,7 @@ def inbound_peers(host, port, timeout=6.0, min_seconds=180, max_behind=20):
             continue
         ip = parse_public(connection.get("host")) if isinstance(connection.get("host"), str) else None
         if ip is not None:
-            peers[str(ip)] = max(peers.get(str(ip), 0), height)
+            rpc_port = number(connection, "rpc_port")
+            known = peers.get(str(ip), (0, 0))
+            peers[str(ip)] = (max(known[0], height), rpc_port if 0 < rpc_port < 65536 else known[1])
     return peers

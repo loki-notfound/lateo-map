@@ -15,8 +15,9 @@ First version, running on map.lateo.dev. Target: Zephyr `v2.3.0`.
 ## What it does
 
 - Finds nodes by asking nodes it already knows for their peers, starting from
-  the network's own seeds. It only contacts addresses it learned that way; it
-  never scans address ranges.
+  the network's own seeds. It only contacts addresses it learned that way, or
+  that are connected to the operator's own nodes; it never scans address
+  ranges.
 - Checks each node with the P2P handshake every node answers and with
   `get_version` on its RPC port: the one it announces, or else 17767. Known
   nodes are checked once per hour, spread evenly; an address that
@@ -39,6 +40,8 @@ What it does not do:
   from outside. Of those the map shows the place, the network and the
   height. Their addresses are not shown or kept; a keyed fingerprint with a
   key of the day counts each node once ([lateo_map/own.py](lateo_map/own.py)).
+  Once a day such a peer is tried from outside; one that answers is a public
+  node and goes onto the map like any other.
 - It does not show whether a node's RPC is restricted, nor an exact build. It
   does not ask for either.
 - It does not look up host names for addresses.

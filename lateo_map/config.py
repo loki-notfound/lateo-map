@@ -45,6 +45,7 @@ class Config:
     private_min_seconds: int = 180  # connected at least this long to an own node
     private_max_behind: int = 20    # and at most this many blocks behind
     private_hold: int = HOUR        # counted this long after it was last seen
+    private_probe_every: int = DAY  # how often such a peer is tried from outside
 
 
 def load(path):
